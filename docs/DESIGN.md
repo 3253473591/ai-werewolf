@@ -1,10 +1,8 @@
 # AI 狼人杀 — 详细设计文档
 
-> 目标：9 个不同 LLM（GPT / Claude / Gemini / DeepSeek / Qwen / Kimi / GLM / Grok / MiniMax-M3）
-> 在同一个房间里打一整局狼人杀，人类可当"上帝"注入提示词，输出观众视角 + 上帝视角两路回放。
+> 目标：9 个不同 LLM（GPT / Claude / Gemini / DeepSeek / Qwen / Kimi / GLM / Grok / MiniMax-M3）在同一个房间里打一整局狼人杀。
 >
-> 基础：改造 [AgentWereWolf](https://github.com/yingyingxia666/AgentWereWolf)（MIT），
-> 复用其规则机、信息隔离、动作解析、日志与房间系统，**替换其记忆层**。
+> 基础：改造 [AgentWereWolf](https://github.com/yingyingxia666/AgentWereWolf)（MIT），复用其规则机、信息隔离、动作解析、日志与房间系统，**替换其记忆层**。
 
 ---
 
