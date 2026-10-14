@@ -1,0 +1,58 @@
+{
+  "_comment": "示例配置。复制为 config/endpoints.json 后填入自己的通道与 key。api_key 是明文落盘，config/ 已加进 .gitignore。",
+  "assignment": "round_robin",
+  "endpoints": [
+    {
+      "id": "ep1",
+      "name": "deepseek",
+      "base_url": "https://api.deepseek.com",
+      "api_key_env": "",
+      "api_key": "sk-YOUR-KEY-HERE",
+      "concurrency": 5,
+      "enabled": true,
+      "note": "",
+      "_models": [
+        "deepseek-flash"
+      ]
+    },
+    {
+      "id": "ep2",
+      "name": "relay-a",
+      "base_url": "https://relay-a.example/v1",
+      "api_key_env": "",
+      "api_key": "sk-YOUR-KEY-HERE",
+      "concurrency": 5,
+      "enabled": true,
+      "note": "OpenAI 兼容中转。实测：前缀缓存分模型（见 PROBE_FINDINGS.md 的方法学）",
+      "_models": [
+        "gpt-5",
+        "claude-sonnet-5",
+        "gemini-3-flash"
+      ]
+    },
+    {
+      "id": "ep3",
+      "name": "volcengine",
+      "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+      "api_key_env": "",
+      "api_key": "YOUR-ARK-KEY-HERE",
+      "concurrency": 5,
+      "enabled": true,
+      "note": "",
+      "_models": [
+        "doubao-seed-1-6-250615"
+      ]
+    },
+    {
+      "id": "ep4",
+      "name": "local-vllm",
+      "base_url": "http://127.0.0.1:8000/v1",
+      "api_key_env": "",
+      "api_key": "not-needed",
+      "concurrency": 1,
+      "enabled": false,
+      "note": "本地 vLLM / Ollama 等自建端点。已停用，按需开启。",
+      "_models": []
+    }
+  ]
+}

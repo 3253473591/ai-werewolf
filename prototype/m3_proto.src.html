@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-phase="night">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>狼人杀 · 对局回放（M3 原型）</title>
+<style>
+:root{
+  --serif:"Noto Serif SC","Source Han Serif SC","Songti SC","STSong","SimSun",serif;
+  --sans:"Microsoft YaHei UI","PingFang SC","Segoe UI",system-ui,sans-serif;
+  --mono:"Cascadia Mono",Consolas,monospace;
+  /* 阵营色：只用于上帝视角的身份徽章 */
+  --wolf:oklch(.70 .17 25); --seer:oklch(.76 .12 300); --witch:oklch(.80 .13 160);
+  --hunter:oklch(.80 .13 60); --villager:oklch(.74 .03 260);
+  --gold:#e8b85a;
+}
+:root[data-phase=night]{--bg0:#060814;--bg1:#0c1124;--accent:#a9bcff;--surf:rgba(150,170,255,.065);--surf2:rgba(150,170,255,.11);
+  --line:rgba(160,180,255,.15);--text:#e9ebf7;--dim:#a6adcb;--ring:#0c1124}
+:root[data-phase=day]{--bg0:#120e0c;--bg1:#1d1612;--accent:#f1c27d;--surf:rgba(255,220,170,.06);--surf2:rgba(255,220,170,.10);
+  --line:rgba(255,215,160,.15);--text:#f5ede5;--dim:#bcae9f;--ring:#1d1612}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg0);color:var(--text);font:14px/1.6 var(--sans);overflow:hidden}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px}
+*{scrollbar-color:var(--line) transparent}
+
+/* 天空：两层叠放，用 opacity 切换（渐变本身不能过渡） */
+.sky{position:fixed;inset:0;opacity:0;transition:opacity .7s ease;pointer-events:none;z-index:0}
+.sky.night{background:radial-gradient(900px 480px at 50% -8%,rgba(120,150,255,.20),transparent 70%),
+  radial-gradient(500px 300px at 90% 100%,rgba(90,60,160,.16),transparent 70%),linear-gradient(#0c1124,#060814)}
+.sky.day{background:radial-gradient(900px 480px at 50% -8%,rgba(255,180,95,.19),transparent 70%),
+  radial-gradient(500px 300px at 10% 100%,rgba(160,70,50,.13),transparent 70%),linear-gradient(#1d1612,#120e0c)}
+:root[data-phase=night] .sky.night,:root[data-phase=day] .sky.day{opacity:1}
+
+.app{position:relative;z-index:1;height:100vh;display:grid;grid-template-rows:58px minmax(0,1fr) 96px}
+
+/* ===== 顶栏：只留三件事 ===== */
+.top{display:flex;align-items:center;gap:18px;padding:0 22px;border-bottom:1px solid var(--line);
+  background:linear-gradient(var(--surf),transparent)}
+.brand{font:700 16px var(--serif);letter-spacing:.18em;color:var(--dim);white-space:nowrap}
+.pill{display:flex;align-items:center;gap:10px;padding:6px 16px 6px 10px;border-radius:999px;
+  background:var(--surf2);border:1px solid var(--line)}
+.pill svg{width:22px;height:22px;color:var(--accent)}
+.pill b{font:700 15px var(--serif);letter-spacing:.06em}
+.pill span{color:var(--dim);font-size:13px}
+.sp{flex:1}
+.seg{display:flex;padding:3px;border-radius:999px;background:var(--surf);border:1px solid var(--line)}
+.seg button{padding:4px 16px;border-radius:999px;color:var(--dim);font-size:13px}
+.seg button.on{background:var(--accent);color:#0b0d1a;font-weight:700}
+.replay{font-size:12px;color:var(--dim);padding:3px 10px;border:1px dashed var(--line);border-radius:999px;white-space:nowrap}
+.menu{width:34px;height:34px;border-radius:50%;border:1px solid var(--line);font-size:18px;line-height:1;color:var(--dim)}
+
+/* ===== 主体：圆桌 | 大桌 | 小桌 ===== */
+.main{display:grid;grid-template-columns:420px minmax(0,1fr);min-height:0}
+.stage{padding:18px 20px 10px;display:flex;flex-direction:column;align-items:center;gap:12px;border-right:1px solid var(--line);min-height:0;overflow:hidden}
+.table{position:relative;width:100%;max-width:380px;aspect-ratio:1;flex:none}
+.ring{position:absolute;inset:7%;border-radius:50%;
+  background:radial-gradient(circle at 50% 38%,var(--surf2),var(--surf) 60%,transparent 100%);
+  border:1px solid var(--line);box-shadow:inset 0 0 60px rgba(0,0,0,.35),0 0 0 8px var(--surf)}
+.ring::after{content:"";position:absolute;inset:11%;border-radius:50%;border:1px dashed var(--line);opacity:.7}
+#links{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+#links path{fill:none;stroke-width:.9;stroke-linecap:round;stroke-dasharray:140;stroke-dashoffset:140;animation:draw .7s ease forwards,fade 1.6s ease .7s forwards}
+@keyframes draw{to{stroke-dashoffset:0}}@keyframes fade{to{opacity:.0}}
+.hub{position:absolute;left:50%;top:50%;width:46%;transform:translate(-50%,-50%);text-align:center;display:flex;flex-direction:column;align-items:center;gap:2px}
+.hub svg{width:34px;height:34px;color:var(--accent);margin-bottom:2px}
+.hub .d{font:700 20px var(--serif);letter-spacing:.1em}
+.hub .p{font-size:12px;color:var(--dim);letter-spacing:.12em}
+.hub .q{margin-top:8px;font:13px/1.6 var(--serif);color:var(--text);opacity:.92;max-height:4.8em;overflow:hidden;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
+.hub .q i{display:block;font-style:normal;font:600 11px var(--sans);color:var(--accent);margin-bottom:1px}
+
+.seat{position:absolute;width:76px;margin:-30px 0 0 -38px;display:flex;flex-direction:column;align-items:center;gap:3px;z-index:2;
+  left:calc(50% + 39% * cos(var(--a)));top:calc(50% + 39% * sin(var(--a)))}
+.medal{position:relative;width:var(--m,52px);height:var(--m,52px);border-radius:50%;display:grid;place-items:center;flex:none;
+  font:700 calc(var(--m,52px) * .36)/1 var(--serif);color:#0b0d1a;letter-spacing:-.02em;
+  background:radial-gradient(circle at 30% 24%,color-mix(in oklab,var(--c) 62%,white),var(--c) 52%,color-mix(in oklab,var(--c) 62%,black));
+  box-shadow:0 0 0 2px var(--ring),0 0 0 3px color-mix(in oklab,var(--c) 55%,transparent),0 6px 14px rgba(0,0,0,.45)}
+.medal .no{position:absolute;right:-3px;bottom:-3px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;
+  background:var(--ring);color:var(--text);font:700 11px/18px var(--mono);text-align:center;border:1px solid var(--line)}
+.seat .nm{font-size:12.5px;font-weight:600;max-width:76px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.seat .rl{font-size:11px;font-weight:700;margin-top:-2px}
+.role-wolf{color:var(--wolf)}.role-seer{color:var(--seer)}.role-witch{color:var(--witch)}.role-hunter{color:var(--hunter)}.role-villager{color:var(--villager)}
+.seat.dead .medal{filter:grayscale(1) brightness(.55)}
+.seat.dead .nm{color:var(--dim)}
+.seat.dead .nm{text-decoration:line-through;text-decoration-color:var(--dim)}
+.seat.dead .cause{position:absolute;left:-4px;top:-4px}
+.cause{min-width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font:700 11px var(--sans);
+  color:#fff;background:#6b7088;border:1px solid var(--ring);z-index:3}
+.cause.wolf{background:oklch(.55 .19 25)}.cause.poison{background:oklch(.52 .15 150)}.cause.vote{background:oklch(.55 .12 80);color:#1a1205}
+.cause.hunter{background:oklch(.58 .14 55)}.cause.night{background:#4a4f78}
+.votes{position:absolute;right:-6px;top:-6px;min-width:22px;height:22px;border-radius:11px;padding:0 6px;display:grid;place-items:center;
+  background:var(--gold);color:#201505;font:800 12px var(--mono);border:2px solid var(--ring);z-index:3}
+.seat.speaking .medal{animation:pulse 1.6s ease-in-out infinite;transform:scale(1.1)}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 2px var(--ring),0 0 0 3px var(--c),0 0 18px color-mix(in oklab,var(--c) 60%,transparent)}
+  50%{box-shadow:0 0 0 2px var(--ring),0 0 0 5px var(--c),0 0 30px color-mix(in oklab,var(--c) 85%,transparent)}}
+.tstat{display:flex;gap:18px;font-size:13px;color:var(--dim);margin-top:16px}
+.tx p+p{margin-top:.55em}
+.tstat b{color:var(--text);font-family:var(--mono)}
+
+/* ===== 大桌 ===== */
+.feedwrap{overflow-y:auto;min-width:0}
+.feed{max-width:760px;margin:0 auto;padding:6px 28px 60px}
+.div{display:flex;align-items:center;gap:16px;margin:26px 0 12px;font:700 14px var(--serif);letter-spacing:.3em;color:var(--accent)}
+.div::before,.div::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--line),transparent)}
+.beat{margin:12px auto;text-align:center;font-size:13px;color:var(--dim);letter-spacing:.04em}
+.beat.night{color:var(--accent);font-family:var(--serif);letter-spacing:.3em}
+.note{display:flex;align-items:center;gap:8px;justify-content:center;margin:9px auto;padding:5px 14px;max-width:620px;
+  border-radius:9px;background:var(--surf);border:1px dashed var(--line);font-size:12.5px;color:var(--dim);text-align:center}
+.note .medal{font-size:11px;color:#0b0d1a}
+.order{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:4px;margin:14px 0;color:var(--dim);font-size:12px}
+.order .medal{--m:26px}.order .medal .no{display:none}.order em{font-style:normal;opacity:.5}
+
+.card{display:flex;gap:14px;margin:16px 0;align-items:flex-start}
+.card .medal{--m:44px}
+.card .bd{flex:1;min-width:0}
+.card .hd{display:flex;align-items:baseline;gap:10px;margin-bottom:5px}
+.card .hd b{font-size:14px;color:var(--c)}
+.tag{font-size:12px;padding:0 8px;border-radius:999px;border:1px solid var(--line);color:var(--dim)}
+.card .hd .meta{margin-left:auto;font:12px var(--mono);color:var(--dim)}
+.card .tx{background:var(--surf);border:1px solid var(--line);border-radius:4px 16px 16px 16px;padding:12px 16px;
+  font:15.5px/1.9 var(--serif);white-space:pre-wrap}
+.pill-role{font-size:12px;font-weight:700;padding:0 8px;border-radius:999px;border:1px solid currentColor}
+
+.tx.clampN{display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer;
+  -webkit-mask-image:linear-gradient(#000 78%,transparent)}
+/* 投票卡：理由 + 投给 X 合并为一张 */
+.vote .tx{padding:9px 14px;font-size:14px;line-height:1.75;cursor:pointer}
+.vote .tx.clamp{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.vote .to{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--gold);font-weight:700}
+.vote .to .medal{--m:20px}.vote .to .medal .no{display:none}
+.lg{font-style:normal;font-size:11px;color:var(--dim);border:1px solid var(--line);border-radius:6px;padding:0 5px;margin-left:5px}
+.vote .hd .to{margin-left:auto}
+
+/* 票型汇总 */
+.tally{margin:22px 0;padding:18px 20px;border-radius:18px;background:linear-gradient(var(--surf2),var(--surf));border:1px solid var(--line)}
+.tally h4{font:700 20px var(--serif);text-align:center;letter-spacing:.06em;margin-bottom:4px}
+.tally h4 em{font-style:normal;color:var(--gold)}
+.tally .sub{text-align:center;color:var(--dim);font-size:12.5px;margin-bottom:14px}
+.trow{display:grid;grid-template-columns:34px 116px 1fr;gap:10px;align-items:center;padding:5px 0}
+.trow .n{white-space:nowrap}
+.trow .medal{--m:30px}.trow .medal .no{display:none}
+.trow .n{font-size:13px;font-weight:600}
+.bar{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.bar .dot{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font:700 11px var(--mono);color:#0b0d1a;
+  background:var(--c)}
+.trow.out .n{color:var(--gold)}
+
+/* 死亡 / 平安夜：整局叙事高点 */
+.fall{margin:26px 0;padding:24px 20px 20px;text-align:center;border-radius:20px;border:1px solid var(--line);
+  background:radial-gradient(420px 160px at 50% 0%,color-mix(in oklab,var(--accent) 14%,transparent),transparent 70%),var(--surf)}
+.fall .row{display:flex;justify-content:center;gap:22px;margin-bottom:12px}
+.fall .it{display:flex;flex-direction:column;align-items:center;gap:6px}
+.fall .it .medal{--m:62px;filter:grayscale(1) brightness(.6)}
+.fall .it .cause{position:absolute;left:-6px;top:-6px;width:26px;height:26px;font-size:13px;filter:none}
+.fall .it .why{font-size:12.5px;color:var(--dim)}
+.fall h4{font:700 22px var(--serif);letter-spacing:.08em}
+.fall p{color:var(--dim);font-size:13px;margin-top:4px}
+.fall.calm h4{color:var(--accent)}
+
+/* ===== 小桌（上帝视角） ===== */
+.wmsg{display:flex;gap:10px;margin:10px 0}.wmsg .medal{--m:30px}.wmsg .medal .no{display:none}
+.wmsg .t{font:13.5px/1.75 var(--serif);flex:1;min-width:0;background:rgba(0,0,0,.22);border-radius:4px 12px 12px 12px;padding:6px 11px}
+.chip{margin:8px 0;padding:7px 12px;border-radius:10px;font-size:13px;text-align:center;background:color-mix(in oklab,var(--wolf) 18%,transparent);color:oklch(.85 .08 25)}
+.pv{margin:8px 0;font-size:13px;display:flex;gap:8px;align-items:baseline}
+.pv i{font-style:normal;font-weight:700;font-size:12px}
+.empty{color:var(--dim);font-size:13px;padding:14px 0;text-align:center}
+
+/* ===== 夜间块：上帝视角下并入大桌，按夜折叠；当前夜自动展开 ===== */
+.night{margin:16px 0;border:1px solid color-mix(in oklab,var(--wolf) 32%,var(--line));border-radius:16px;
+  background:color-mix(in oklab,var(--wolf) 6%,var(--surf));overflow:hidden}
+.nh{width:100%;display:flex;align-items:center;gap:12px;padding:10px 16px;text-align:left}
+.nh span{font:700 14px var(--serif);letter-spacing:.1em;color:var(--wolf);white-space:nowrap}
+.nh b{font-size:11px;font-weight:600;padding:0 7px;border-radius:999px;border:1px solid currentColor;color:var(--dim);white-space:nowrap}
+.nh em{font-style:normal;flex:1;min-width:0;font-size:12.5px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nh i{font-style:normal;font-size:12px;color:var(--dim);white-space:nowrap}
+.nb{padding:2px 16px 12px;border-top:1px solid color-mix(in oklab,var(--wolf) 22%,var(--line))}
+.night:not(.open) .nb{display:none}
+/* 猎人报幕：白天事件、公开可见，所以不用夜间那种红框，改用日间强调色 */
+.hblock{margin:16px 0;padding:2px 4px}
+.rb{display:flex;align-items:center;gap:12px;margin:12px 0 8px;font:12.5px var(--serif);color:var(--dim);letter-spacing:.16em;white-space:nowrap}
+.rb::before,.rb::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,transparent,color-mix(in oklab,var(--wolf) 40%,var(--line)),transparent)}
+.hblock .rb::before,.hblock .rb::after{background:linear-gradient(90deg,transparent,color-mix(in oklab,var(--accent) 45%,var(--line)),transparent)}
+.hunt{display:flex;align-items:center;gap:10px;margin:8px 2px;padding:9px 14px;border-radius:12px;
+  background:var(--surf);border:1px solid var(--line);font-size:14px}
+.hunt .medal{--m:30px}.hunt .medal .no{display:none}
+.hunt b{color:var(--c)}
+.hunt.shoot{border-color:color-mix(in oklab,var(--accent) 55%,var(--line));
+  background:linear-gradient(90deg,color-mix(in oklab,var(--accent) 16%,var(--surf)),var(--surf))}
+.hunt .arw{color:var(--accent);font-weight:700}
+.wmsg{display:flex;gap:10px;margin:10px 0}.wmsg .medal{--m:30px}.wmsg .medal .no{display:none}
+.wmsg .t b{display:block;font-size:12.5px;color:var(--c);margin-bottom:1px}
+.chip{margin:8px 0;padding:7px 12px;border-radius:10px;font-size:13px;text-align:center;background:color-mix(in oklab,var(--wolf) 18%,transparent);color:oklch(.85 .08 25)}
+.pv{margin:8px 0;font-size:13px;display:flex;gap:8px;align-items:baseline}
+.pv i{font-style:normal;font-weight:700;font-size:12px}
+/* ===== 时间轴 ===== */
+.tl{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:20px;align-items:center;padding:0 22px;border-top:1px solid var(--line);
+  background:linear-gradient(transparent,var(--surf))}
+.ctl{display:flex;gap:6px;align-items:center}
+.ctl button{width:36px;height:36px;border-radius:50%;border:1px solid var(--line);color:var(--text);font-size:13px;background:var(--surf)}
+.ctl button.play{width:46px;height:46px;background:var(--accent);color:#0b0d1a;border:0;font-size:16px}
+.ctl .jump{width:auto;padding:0 12px;border-radius:999px;font-size:12px;color:var(--dim)}
+.trackw{position:relative;height:66px}
+.track{position:absolute;left:0;right:0;top:0;height:34px;border-radius:8px;overflow:hidden;background:var(--surf);border:1px solid var(--line);cursor:pointer;touch-action:none}
+.band{position:absolute;top:0;bottom:0;background:rgba(110,130,230,.17)}
+.tick{position:absolute;top:4px;bottom:4px;width:2px;margin-left:-1px;border-radius:2px;pointer-events:none}
+.tick.death{background:oklch(.68 .18 25)}.tick.vote{background:var(--gold)}
+.fill{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,transparent,color-mix(in oklab,var(--accent) 22%,transparent))}
+.head{position:absolute;top:-4px;bottom:-4px;width:3px;margin-left:-1.5px;background:var(--accent);border-radius:2px;box-shadow:0 0 10px var(--accent)}
+.curve{position:absolute;left:0;right:0;top:38px;height:26px;width:100%}
+.lbl{font:12px var(--mono);color:var(--dim);white-space:nowrap;text-align:right}
+.lbl b{display:block;font:700 14px var(--serif);color:var(--text);letter-spacing:.06em}
+.legend{display:flex;gap:10px;font-size:11.5px;color:var(--dim);justify-content:flex-end;margin-top:2px}
+.legend i{display:inline-block;width:10px;height:3px;border-radius:2px;margin-right:4px;vertical-align:middle}
+
+/* ===== 手机：座位条 + feed + 底部时间轴 ===== */
+.strip{display:none}
+@media (max-width:900px){
+  body{overflow:hidden}
+  .app{grid-template-rows:52px minmax(0,1fr) 78px}
+  .brand,.replay,.menu~*{display:none}
+  .top{padding:0 12px;gap:10px}.pill{padding:4px 12px 4px 8px}
+  .app{grid-template-columns:minmax(0,1fr)}
+  .main,[data-view=spec] .main{grid-template-columns:minmax(0,1fr)}
+  .top{overflow:hidden}
+  .seg button{padding:4px 11px}
+  .strip{background:var(--bg1)}
+  .stage{display:none!important}
+  .strip{display:flex;gap:12px;overflow-x:auto;padding:10px 14px;position:sticky;top:0;z-index:5;
+    background:linear-gradient(var(--bg1) 70%,transparent);border-bottom:1px solid var(--line)}
+  .strip .seat{position:static;margin:0;flex:none;width:58px}
+  .strip .medal{--m:42px}
+  .strip .seat .nm{max-width:58px;font-size:11.5px}
+  .feed{padding:0 14px 40px}
+  .card .medal{--m:36px}.card{gap:10px}.card .tx{font-size:15px;padding:10px 12px}
+  .tl{grid-template-columns:auto minmax(0,1fr);gap:10px;padding:0 12px}
+  .lbl,.curve,.ctl .jump{display:none}
+  .trackw{height:36px}.ctl button{width:34px;height:34px}
+  .fall .row{gap:14px}.fall .it .medal{--m:50px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="sky night"></div><div class="sky day"></div>
+<div class="app">
+  <header class="top">
+    <div class="brand">狼人杀 · 对局回放</div>
+    <div class="pill" id="pill"></div>
+    <div class="sp"></div>
+    <span class="replay" id="rp">回放中 · 20261005_145320_9seat_web</span>
+    <div class="seg" id="seg"><button data-v="spec" class="on">观众</button><button data-v="god">上帝</button></div>
+    <button class="menu" aria-label="更多">⋯</button>
+  </header>
+
+  <main class="main">
+    <section class="stage">
+      <div class="table" id="table">
+        <div class="ring"></div>
+        <svg id="links" viewBox="0 0 100 100"></svg>
+        <div class="hub" id="hub"></div>
+        <div id="seats"></div>
+      </div>
+      <div class="tstat" id="tstat"></div>
+    </section>
+    <section class="feedwrap" id="fw">
+      <div class="strip" id="strip"></div>
+      <div class="feed" id="feed"></div>
+    </section>
+  </main>
+
+  <footer class="tl">
+    <div class="ctl">
+      <button id="bPrev" aria-label="上一条">◀</button>
+      <button id="bPlay" class="play" aria-label="播放">▶</button>
+      <button id="bNext" aria-label="下一条">▶</button>
+      <button class="jump" id="bVote">下次投票 ⏭</button>
+      <button class="jump" id="bDeath">下次死亡 ⏭</button>
+    </div>
+    <div class="trackw">
+      <div class="track" id="track"><div class="fill" id="fill"></div><div id="marks"></div><div class="head" id="head"></div></div>
+      <svg class="curve" id="curve" viewBox="0 0 100 26" preserveAspectRatio="none"></svg>
+    </div>
+    <div class="lbl" id="lbl"></div>
+  </footer>
+</div>
+
+<script>
+const EV = /*__EV__*/[];
+const META = /*__META__*/{};
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const HASH = new URLSearchParams(location.hash.slice(1));
+
+/* ---------- 座位 & 色板：色相避开红(25)/金(85)/橙(60)，OKLCH 等亮度 ---------- */
+let SEATS = META.seats;
+const FAKE = +HASH.get('fake') || 0;
+if (FAKE) SEATS = Array.from({length: FAKE}, (_, i) => ({
+  no: i+1, label: ['DeepSeek','GPT','Claude','Doubao','Qwen','Gemini','GLM','MiniMax','Kimi','Grok'][i%10],
+  role: 'x', role_cn: ['狼人','村民','女巫','预言家','猎人'][i%5], is_wolf: i%5===0, model: 'm'}));
+const EVS = FAKE ? [] : EV;
+const N = SEATS.length;
+const byNo = Object.fromEntries(SEATS.map(s => [s.no, s]));
+const HUES = [245,320,145,195,295,120,220,345,170,270];
+const colorOf = no => `oklch(.78 .12 ${HUES[(no-1)%10]})`;
+const ROLECLS = {Werewolf:'wolf', Seer:'seer', Witch:'witch', Hunter:'hunter', Villager:'villager'};
+const PHASE_CN = {NIGHT_START:'天黑', NIGHT_WOLF_CHAT:'狼人商议', NIGHT_WOLF:'狼人击杀', NIGHT_SEER:'预言家查验',
+  NIGHT_WITCH:'女巫行动', NIGHT_GUARD:'守卫', NIGHT_RESOLVE:'夜间结算', DAY_ANNOUNCE:'天亮', DAY_SPEECH:'发言',
+  DAY_VOTE:'投票', DAY_VOTE_PK:'PK 投票', DAY_PK_SPEECH:'PK 发言', DAY_LAST_WORDS:'遗言', DAY_HUNTER:'猎人'};
+const CAUSE_CN = {wolf:'被刀杀', poison:'被毒杀', vote:'被放逐', hunter:'被枪击', night:'昨夜离席'};
+const CAUSE_GLYPH = {wolf:'刀', poison:'毒', vote:'票', hunter:'枪', night:'夜'};
+
+/* ---------- 死亡派生（原型里是 legacy 回填；新版应读 data.deaths） ---------- */
+EVS.forEach(e => {
+  e.deaths = [];
+  if (e.phase === 'DAY_ANNOUNCE' && /死亡/.test(e.text)) {
+    (((e.text.split('：')[1]) || '').match(/\d+/g) || []).forEach(n => {
+      n = +n;
+      const poison = EVS.some(x => x.day === e.day && x.phase === 'NIGHT_WITCH' && x.data && x.data.action === 'poison' && x.data.target === n);
+      e.deaths.push({no: n, cause: poison ? 'poison' : 'wolf'});
+    });
+  } else if (e.kind === 'resolution' && /^DAY_VOTE/.test(e.phase) && e.data && e.data.target != null) {
+    e.deaths.push({no: e.data.target, cause: 'vote'});
+  } else if (e.phase === 'DAY_HUNTER' && e.data && e.data.target != null) {
+    e.deaths.push({no: e.data.target, cause: 'hunter'});
+  }
+});
+
+/* ---------- 状态：mode + cursor（可见事件数） ---------- */
+let mode = HASH.get('mode') === 'god' ? 'god' : 'spec';
+let V = [], cur = 0;
+const isGod = () => mode === 'god';
+const redactCause = c => isGod() ? c : (c === 'wolf' || c === 'poison' ? 'night' : c);   // 观众看不到「刀 / 毒」
+function rebuildV(keepSeq) {
+  V = EVS.filter(e => isGod() || e.channel === 'public');
+  if (keepSeq != null) cur = V.filter(e => e.seq <= keepSeq).length;
+}
+function seqAtCursor() { return cur ? V[cur-1].seq : -1; }
+
+/* ---------- 图标 ---------- */
+const SUN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2" fill="currentColor" fill-opacity=".25"/><path d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4M5.3 5.3l1.7 1.7M17 17l1.7 1.7M5.3 18.7 7 17M17 7l1.7-1.7"/></svg>';
+const MOON = '<svg viewBox="0 0 24 24" fill="currentColor" fill-opacity=".22" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5Z"/></svg>';
+
+const medal = (no, m, extra = '') =>
+  `<div class="medal" style="--c:${colorOf(no)};${m ? `--m:${m}px;` : ''}">${esc((() => { const l = byNo[no]?.label || '?'; return l[0].toUpperCase() + (l[1] || '').toLowerCase(); })())}<span class="no">${no}</span>${extra}</div>`;
+const nameOf = no => byNo[no]?.label || (no + '号');
+const rolePill = no => isGod() && byNo[no]?.role ? `<span class="pill-role role-${ROLECLS[byNo[no].role] || 'villager'}">${esc(byNo[no].role_cn)}</span>` : '';
+
+/* ---------- 圆桌 ---------- */
+function seatPos(no) {                         // 与 CSS 的 calc(50% + 39% * cos/sin) 同一公式
+  const a = ((no - 1) / N) * 2 * Math.PI - Math.PI / 2;
+  return [50 + 39 * Math.cos(a), 50 + 39 * Math.sin(a)];
+}
+function renderTable(shown, last) {
+  const lastSeq = last ? last.seq : -1;
+  const dead = {};
+  EVS.filter(e => e.seq <= lastSeq).forEach(e => e.deaths.forEach(d => dead[d.no] = d.cause));
+  // 当前这一轮的票数徽章
+  const votes = {};
+  if (last) {
+    const phases = shown.filter(e => e.day === last.day && /^DAY_VOTE/.test(e.phase) && e.data && e.data.action === 'vote' && e.data.target != null);
+    const latest = phases.length ? phases[phases.length-1].phase : null;
+    const resolved = shown.some(e => e.day === last.day && e.kind === 'resolution' && /^DAY_VOTE/.test(e.phase) && e.phase === latest && e.data && e.data.target != null);
+    phases.filter(e => e.phase === latest).forEach(e => votes[e.data.target] = (votes[e.data.target] || 0) + 1);
+    if (resolved) Object.keys(votes).forEach(k => delete votes[k]);   // 结算后票数交给票型卡，座位上只留死因章
+  }
+  const speaker = last && last.kind === 'speech' && last.actor ? last.actor : null;
+  const html = SEATS.map((s, i) => {
+    const d = dead[s.no];
+    const cls = ['seat', d ? 'dead' : '', speaker === s.no && !d ? 'speaking' : ''].join(' ');
+    const badge = d ? `<span class="cause ${redactCause(d)}">${CAUSE_GLYPH[redactCause(d)]}</span>` : '';
+    const vt = votes[s.no] ? `<span class="votes">${votes[s.no]}</span>` : '';
+    return `<div class="${cls}" style="--a:${(i / N) * 360 - 90}deg;--c:${colorOf(s.no)}" title="${esc(s.label)}">
+      <div style="position:relative">${medal(s.no)}${badge}${vt}</div>
+      <div class="nm">${esc(s.label)}</div>${isGod() && s.role !== 'x' ? `<div class="rl role-${ROLECLS[s.role] || 'villager'}">${esc(s.role_cn)}</div>` : ''}</div>`;
+  }).join('');
+  $('#seats').innerHTML = html;
+  // 手机座位条
+  $('#strip').innerHTML = SEATS.map(s => {
+    const d = dead[s.no];
+    return `<div class="seat ${d ? 'dead' : ''} ${speaker === s.no && !d ? 'speaking' : ''}" style="--c:${colorOf(s.no)}">
+      <div style="position:relative">${medal(s.no)}${d ? `<span class="cause ${redactCause(d)}">${CAUSE_GLYPH[redactCause(d)]}</span>` : ''}</div><div class="nm">${esc(s.label)}</div></div>`;
+  }).join('');
+  // 统计
+  const alive = SEATS.filter(s => !dead[s.no]);
+  $('#tstat').innerHTML = isGod() && !FAKE
+    ? `<span>狼人 <b style="color:var(--wolf)">${alive.filter(s => s.is_wolf).length}</b></span><span>好人 <b>${alive.filter(s => !s.is_wolf).length}</b></span>`
+    : `<span>存活 <b>${alive.length}</b> / ${N}</span>`;
+  return dead;
+}
+
+function renderLinks(last) {
+  const svg = $('#links'); svg.innerHTML = '';
+  if (!last || !last.data) return;
+  let from = last.actor, to = last.data.target, color = null;
+  if (last.data.action === 'vote' && to != null) color = 'var(--gold)';
+  else if (isGod() && last.channel === 'wolf' && last.data.action === 'kill') color = 'oklch(.68 .18 25)';
+  else if (isGod() && last.phase === 'NIGHT_SEER' && last.to_seat) { from = last.to_seat; color = 'oklch(.78 .12 300)'; }
+  else if (isGod() && last.phase === 'NIGHT_WITCH' && last.to_seat && to != null) { from = last.to_seat; color = last.data.action === 'poison' ? 'oklch(.7 .15 150)' : 'oklch(.82 .12 160)'; }
+  if (!color || !from || to == null || !byNo[from] || !byNo[to]) return;
+  const [x1, y1] = seatPos(from), [x2, y2] = seatPos(to);
+  const cx = (x1 + x2) / 2 * .42 + 50 * .58, cy = (y1 + y2) / 2 * .42 + 50 * .58;     // 控制点向桌心拉
+  svg.innerHTML = `<defs><marker id="ar" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 10 5 0 10z" fill="${color}" stroke="none" style="animation:none;stroke-dasharray:none;opacity:1"/></marker></defs>
+    <path d="M${x1} ${y1} Q${cx} ${cy} ${x2} ${y2}" stroke="${color}" marker-end="url(#ar)"/>`;
+}
+
+function renderHub(last, night) {
+  const day = last ? last.day : 0;
+  const sub = last ? (PHASE_CN[last.phase] || '') : '';
+  let q = '';
+  if (last && last.kind === 'speech' && last.actor && !(last.data && last.data.action === 'vote')) {
+    q = `<div class="q"><i>${esc(nameOf(last.actor))}</i>${esc(last.text.replace(/\s+/g, ' '))}</div>`;
+  } else if (last && last.data && last.data.action === 'vote') {
+    q = `<div class="q"><i>${esc(nameOf(last.actor))}</i>${last.data.target == null ? '弃票' : '投给 ' + esc(nameOf(last.data.target))}</div>`;
+  }
+  $('#hub').innerHTML = `${night ? MOON : SUN}<div class="d">${day ? '第 ' + day + ' 天' : '开局'}</div><div class="p">${night ? '夜晚' : '白天'}${sub ? ' · ' + sub : ''}</div>${q}`;
+  $('#pill').innerHTML = `${night ? MOON : SUN}<b>${day ? '第 ' + day + ' 天 · ' : ''}${night ? '夜晚' : '白天'}</b><span>${sub}</span>`;
+}
+
+/* ---------- 大桌 ---------- */
+/* ---- 投票事件识别与「引擎自生成文本」兜底 ----
+   ★ 原则：解析**引擎自己写死的**格式（"N号 投给 M号" / "N号 弃票" / "昨晚死亡的是：X、Y"）
+     是可靠的，因为格式由我们控制；解析**模型生成的自由发言**才是禁止的。
+     实测 46 局里只有 7 局的投票事件带 data.action/target（该字段 10-05 13:18 才加），
+     没有这层兜底，39 局老对局的票型卡是空的。 */
+const VOTE_RE = /^(\d+)号\s*投给\s*(\d+)号/;
+const ABSTAIN_RE = /^(\d+)号\s*弃票/;
+function voteTarget(e) {
+  if (e.data && e.data.action === 'vote') return { target: e.data.target, legacy: false };
+  const m = VOTE_RE.exec(e.text);    if (m) return { target: +m[2], legacy: true };
+  if (ABSTAIN_RE.test(e.text))       return { target: null, legacy: true };
+  return null;
+}
+const isVote = e => e.kind === 'speech' && /^DAY_VOTE/.test(e.phase) && !!voteTarget(e);
+/* 当前这条完整展开，历史长文折叠成 6 行，点击展开 —— 真实发言常有 500+ 字、段间空行，不折叠一条就占满一屏 */
+let LASTSEQ = -1;
+const speechCard = e => {
+  const long = e.text.length > 240 && e.seq !== LASTSEQ;
+  const tag = e.phase === 'DAY_LAST_WORDS' ? '<span class="tag">遗言</span>' : e.phase === 'DAY_PK_SPEECH' ? '<span class="tag">PK 发言</span>' : '';
+  return `<article class="card" style="--c:${colorOf(e.actor)}">${medal(e.actor)}<div class="bd">
+    <div class="hd"><b>${esc(nameOf(e.actor))}</b>${rolePill(e.actor)}${tag}${isGod() ? `<span class="meta">${esc(byNo[e.actor]?.model || '')} · #${e.seq}</span>` : ''}</div>
+    <div class="tx ${long ? 'clampN' : ''}">${esc(e.text).split(/\n+/).map(p => `<p>${p}</p>`).join('')}</div></div></article>`;
+};
+const voteCard = (r, a) => {
+  const who = (r || a).actor;
+  const vt = a ? voteTarget(a) : null;
+  const tgt = a ? (vt && vt.target != null
+      ? `<span class="to">投给 ${medal(vt.target, 20)} ${esc(nameOf(vt.target))}${vt.legacy ? '<i class="lg">按文本还原</i>' : ''}</span>`
+      : `<span class="to">弃票${vt && vt.legacy ? '<i class="lg">按文本还原</i>' : ''}</span>`) : '';
+  const body = r ? `<div class="tx clamp" title="点击展开">${esc(r.text)}</div>` : '';
+  return `<article class="card vote" style="--c:${colorOf(who)}">${medal(who)}<div class="bd">
+    <div class="hd"><b>${esc(nameOf(who))}</b>${rolePill(who)}${tgt}</div>${body}</div></article>`;
+};
+const orderChips = e => {
+  const nums = (e.text.split('：')[1] || '').match(/\d+/g) || [];
+  return `<div class="order"><span>发言顺序</span>${nums.map((n, i) => `${i ? '<em>›</em>' : ''}${medal(+n, 26)}`).join('')}</div>`;
+};
+/* 「本轮未发言」「X号 的调用失败」这类系统行：只给一行脚注，不能混进发言顺序 */
+const isOrder = e => e.kind === 'system' && e.phase === 'DAY_SPEECH' && e.text.includes('发言顺序');
+const noteLine = e => `<div class="note">${e.actor ? `<span class="medal" style="--m:18px;--c:${colorOf(e.actor)}">${e.actor}</span>` : ''}${esc(e.text)}</div>`;
+function tallyCard(e, before) {
+  const votes = before.filter(x => x.day === e.day && /^DAY_VOTE/.test(x.phase) === /^DAY_VOTE/.test(e.phase) && isVote(x));
+  const by = {}; let abst = 0, legacy = false;
+  votes.forEach(x => {
+    const vt = voteTarget(x);
+    if (vt.target == null) { abst++; return; }
+    (by[vt.target] ||= []).push(x.actor);
+    legacy = legacy || vt.legacy;
+  });
+  const rows = Object.entries(by).sort((a, b) => b[1].length - a[1].length || a[0] - b[0]);
+  const out = e.data && e.data.target;
+  const n = Object.values(by).reduce((s, v) => s + v.length, 0);
+  const title = out != null ? `<em>${esc(nameOf(out))}</em> 被放逐` : esc(e.text);
+  return `<section class="tally"><h4>${title}</h4><div class="sub">${out != null ? `${e.data.votes} 票` : ''}${n && out == null ? `${n} 票` : ''} · 第 ${e.day} 天投票结果${abst ? ` · ${abst} 人弃票` : ''}${legacy ? ' · 老对局按文本还原' : ''}</div>
+    ${rows.map(([t, vs]) => `<div class="trow ${+t === out ? 'out' : ''}">${medal(+t, 30)}<div class="n">${esc(nameOf(+t))}${+t === out ? ' · 放逐' : ''}</div>
+      <div class="bar">${vs.map(v => `<span class="dot" style="--c:${colorOf(v)}" title="${esc(nameOf(v))}">${v}</span>`).join('')}<span style="margin-left:4px;color:var(--dim);font:12px var(--mono)">${vs.length}</span></div></div>`).join('')}</section>`;
+}
+function fallCard(e, note) {
+  const sub = note ? `<p>${esc(note)}</p>` : '';
+  if (!e.deaths.length) {
+    return `<section class="fall calm"><h4>平安夜</h4><p>${note ? esc(note) : '昨夜无人离席'}</p></section>`;
+  }
+  const items = e.deaths.map(d => `<div class="it"><div style="position:relative">${medal(d.no, 62, `<span class="cause ${redactCause(d.cause)}">${CAUSE_GLYPH[redactCause(d.cause)]}</span>`)}</div>
+    <b style="font-size:14px">${esc(nameOf(d.no))}</b><span class="why">${CAUSE_CN[redactCause(d.cause)]}</span></div>`).join('');
+  const title = e.phase === 'DAY_HUNTER' ? `${esc(nameOf(e.actor))} 开枪带走了 ${esc(nameOf(e.deaths[0].no))}` : `昨夜，${e.deaths.map(d => esc(nameOf(d.no))).join(' · ')} 离席`;
+  return `<section class="fall"><div class="row">${items}</div><h4>${title}</h4>${sub}</section>`;
+}
+const nightOpen = {};
+/* 夜间报幕顺序 = 引擎真实顺序（engine.py:night）：守卫 → 狼人 → 女巫 → 预言家。
+   报幕是纯展示文本，不需要新协议字段 —— 由阶段边界推导即可。
+   ★ 但报幕行**只能在上帝视角出现**：角色已出局那一段不会再报幕，
+     观众一旦看到「预言家请睁眼」消失，就等于知道预言家死了。 */
+const NIGHT_SLOTS = [
+  { key: 'guard', phase: 'NIGHT_GUARD', label: '守卫' },
+  { key: 'wolf',  phase: 'NIGHT_WOLF',  label: '狼人' },
+  { key: 'witch', phase: 'NIGHT_WITCH', label: '女巫' },
+  { key: 'seer',  phase: 'NIGHT_SEER',  label: '预言家' },
+];
+function nightSlots(evs) {
+  return NIGHT_SLOTS.map(sl => ({
+    ...sl,
+    items: evs.filter(e => sl.key === 'wolf' ? e.channel === 'wolf' : e.phase === sl.phase),
+  })).filter(sl => sl.items.length);          // 该角色不在场 / 已出局 → 整段跳过，报幕自动合并
+}
+function nightSummary(slots) {
+  const bits = [];
+  const w = slots.find(s => s.key === 'wolf');
+  const wk = w && w.items.find(e => e.kind === 'resolution' && e.data && e.data.target != null);
+  if (wk) bits.push(`刀 ${wk.data.target}号`);
+  const wt = slots.find(s => s.key === 'witch');
+  if (wt) { const a = wt.items.find(e => e.data && e.data.action); if (a) bits.push(a.data.action === 'save' ? '救药' : a.data.action === 'poison' ? `毒 ${a.data.target}号` : '不用药'); }
+  const se = slots.find(s => s.key === 'seer');
+  if (se) { const a = se.items.find(e => e.data && e.data.target != null); if (a) bits.push(`验 ${a.data.target}号 ${a.data.is_wolf ? '狼' : '好人'}`); }
+  return bits.join(' · ') || '夜间行动';
+}
+const rb = t => `<div class="rb">${esc(t)}</div>`;
+function slotBody(sl, isCur) {
+  return sl.items.map(e => {
+    if (e.channel === 'wolf' && e.kind === 'speech') {
+      const long = e.text.length > 200 && !(isCur && e.seq === LASTSEQ);
+      return `<div class="wmsg" style="--c:${colorOf(e.actor)}">${medal(e.actor, 30)}<div class="t ${long ? 'tx clampN' : ''}"><b>${esc(nameOf(e.actor))}</b>${esc(e.text.replace(/\n+/g, ' '))}</div></div>`;
+    }
+    if (e.channel === 'wolf') return `<div class="chip">${e.kind === 'action' ? '🗡 ' + esc(nameOf(e.actor)) + '：' : '⚖ '}${esc(e.text)}</div>`;
+    return `<div class="pv"><i class="role-${e.phase === 'NIGHT_SEER' ? 'seer' : e.phase === 'NIGHT_WITCH' ? 'witch' : 'villager'}">${esc(sl.label)}</i><span>${esc(e.text)}</span></div>`;
+  }).join('');
+}
+function nightBlock(day, evs, isCur) {
+  const open = day in nightOpen ? nightOpen[day] : isCur;
+  const slots = nightSlots(evs);
+  let body = rb('天黑请闭眼');
+  slots.forEach((sl, i) => {
+    // 上一段收尾与下一段开场合成一行：「狼人请闭眼，女巫请睁眼」
+    body += rb(i === 0 ? `${sl.label}请睁眼` : `${slots[i - 1].label}请闭眼，${sl.label}请睁眼`);
+    body += slotBody(sl, isCur);
+  });
+  if (slots.length) body += rb(`${slots[slots.length - 1].label}请闭眼`);
+  return `<section class="night ${open ? 'open' : ''}" data-day="${day}"><button class="nh"><span>☾ 第 ${day} 夜</span><b>仅上帝可见</b><em>${esc(nightSummary(slots))}</em><i>${open ? '收起' : '展开'}</i></button><div class="nb">${body}</div></section>`;
+}
+/* 猎人报幕。猎人开枪是 **PUBLIC** 事件 —— 观众与上帝看到的一样，
+   这一点和夜间报幕（仅上帝）必须区分开。
+   ⚠ 引擎目前只在「开枪带走 X」时写 data.target，且**三个分支都不写 actor**，
+     所以发起人只能从文本里抠。文档 §2.1 已列为待补字段。 */
+function hunterBlock(evs) {
+  const items = evs.map(e => {
+    const who = +(e.text.match(/^(\d+)号/) || [])[1];
+    const tgt = e.data && e.data.target != null ? e.data.target : null;
+    if (tgt != null && who) {
+      return `<div class="hunt shoot" style="--c:${colorOf(who)}">${medal(who, 30)}
+        <b>${esc(nameOf(who))}</b><span>猎人开枪带走</span>${medal(tgt, 26)}
+        <b style="--c:${colorOf(tgt)}">${esc(nameOf(tgt))}</b></div>`;
+    }
+    if (who) return `<div class="hunt" style="--c:${colorOf(who)}">${medal(who, 30)}<b>${esc(nameOf(who))}</b><span>${esc(e.text.replace(/^\d+号\s*/, ''))}</span></div>`;
+    return `<div class="hunt"><span>${esc(e.text)}</span></div>`;   // 「猎人被毒死，无法开枪」没有座位号
+  }).join('');
+  return `<section class="hblock">${rb('猎人请睁眼')}${items}${rb('猎人请闭眼')}</section>`;
+}
+function renderFeed(shown) {
+  LASTSEQ = shown.length ? shown[shown.length - 1].seq : -1;
+  let html = '', day = 0, nb = [], nsDay = 0, nn = '';
+  const flush = cur => {
+    if (nb.length) html += nightBlock(nb[0].day, nb, cur);          // 报幕块自己带「天黑请闭眼」
+    else if (nsDay) html += `<div class="beat night">☾ 天黑请闭眼</div>`;
+    nb = []; nsDay = 0;
+  };
+  for (let i = 0; i < shown.length; i++) {
+    const e = shown[i];
+    if (e.channel !== 'public') { nb.push(e); continue; }          // 仅上帝视角会走到这里：V 已被 redact 过滤
+    if (e.phase !== 'NIGHT_START') flush(false);
+    if (e.day > 0 && e.day !== day) { day = e.day; html += `<div class="div"><span>第 ${day} 天</span></div>`; }
+    if (e.phase === 'NIGHT_START') { nsDay = e.day; continue; }    // 交给 flush 决定：有报幕块就不重复
+    if (isOrder(e)) { html += orderChips(e); continue; }
+    if (e.phase === 'NIGHT_RESOLVE') { nn = e.text; continue; }    // 「6号 昨晚被救下了」并进天亮卡
+    if (e.phase === 'DAY_ANNOUNCE') { html += fallCard(e, nn); nn = ''; continue; }
+    if (e.phase === 'DAY_HUNTER' && e.kind === 'resolution') {
+      const grp = [e];
+      while (shown[i + 1] && shown[i + 1].phase === 'DAY_HUNTER' && shown[i + 1].kind === 'resolution') grp.push(shown[++i]);
+      html += hunterBlock(grp); continue;
+    }
+    if (e.kind === 'resolution' && /^DAY_VOTE/.test(e.phase)) { html += tallyCard(e, shown.slice(0, i)); continue; }
+    if (e.kind === 'resolution') { html += `<div class="beat">${esc(e.text)}</div>`; continue; }
+    if (e.kind === 'speech' && /^DAY_VOTE/.test(e.phase)) {
+      if (isVote(e)) { html += voteCard(null, e); continue; }          // 只有动作、没有理由
+      const nx = shown[i + 1];
+      if (nx && nx.actor === e.actor && nx.phase === e.phase && isVote(nx)) { html += voteCard(e, nx); i++; continue; }
+      html += voteCard(e, null); continue;
+    }
+    if (e.kind === 'speech') { html += speechCard(e); continue; }
+    if (e.kind === 'system') { html += noteLine(e); continue; }
+    html += `<div class="beat">${esc(e.text)}</div>`;
+  }
+  flush(true);                                                       // 末尾仍在夜里 = 当前夜，展开
+  const fw = $('#fw'), pinned = fw.scrollHeight - fw.scrollTop - fw.clientHeight < 160;
+  $('#feed').innerHTML = html || '<div class="beat" style="margin-top:80px">拖动时间轴或点击 ▶ 开始回放</div>';
+  if (pinned) fw.scrollTop = fw.scrollHeight;
+}
+/* ---------- 时间轴 ---------- */
+function buildTimeline() {
+  const T = Math.max(V.length, 1), pct = i => (i / T * 100);
+  let marks = '', start = -1;
+  V.forEach((e, i) => {
+    if (e.phase === 'NIGHT_START') start = i;
+    if (e.phase === 'DAY_ANNOUNCE' && start >= 0) { marks += `<div class="band" style="left:${pct(start)}%;width:${pct(i - start)}%"></div>`; start = -1; }
+  });
+  if (start >= 0) marks += `<div class="band" style="left:${pct(start)}%;width:${pct(V.length - start)}%"></div>`;
+  V.forEach((e, i) => {
+    if (e.deaths && e.deaths.length) marks += `<div class="tick death" style="left:${pct(i + .5)}%"></div>`;
+    else if (e.kind === 'resolution' && /^DAY_VOTE/.test(e.phase)) marks += `<div class="tick vote" style="left:${pct(i + .5)}%"></div>`;
+  });
+  $('#marks').innerHTML = marks;
+  // 形势曲线：观众只给「总存活」，上帝才分阵营 —— 否则曲线会泄露身份
+  const dead = new Set(); const tot = [], wf = [], gd = [];
+  for (let i = 0; i <= V.length; i++) {
+    if (i > 0) (V[i-1].deaths || []).forEach(d => dead.add(d.no));
+    const al = SEATS.filter(s => !dead.has(s.no));
+    tot.push(al.length); wf.push(al.filter(s => s.is_wolf).length); gd.push(al.filter(s => !s.is_wolf).length);
+  }
+  const line = (arr, max, color, w = 1.4) => `<polyline fill="none" stroke="${color}" stroke-width="${w}" vector-effect="non-scaling-stroke" stroke-linejoin="round"
+    points="${arr.map((v, i) => `${(i / Math.max(V.length, 1) * 100).toFixed(2)},${(24 - v / max * 22).toFixed(2)}`).join(' ')}"/>`;
+  $('#curve').innerHTML = isGod() ? line(gd, N, 'var(--accent)') + line(wf, N, 'oklch(.7 .17 25)') : line(tot, N, 'var(--accent)');
+}
+function renderPlayhead() {
+  const p = cur / Math.max(V.length, 1) * 100;
+  $('#head').style.left = p + '%'; $('#fill').style.width = p + '%';
+  const last = cur ? V[cur-1] : null;
+  $('#lbl').innerHTML = `<b>${last ? '第 ' + last.day + ' 天 · ' + (PHASE_CN[last.phase] || '') : '开局'}</b>事件 ${cur} / ${V.length}
+    <div class="legend">${isGod() ? '<span><i style="background:var(--accent)"></i>好人</span><span><i style="background:oklch(.7 .17 25)"></i>狼人</span>' : '<span><i style="background:var(--accent)"></i>存活</span>'}</div>`;
+}
+
+/* ---------- 总渲染 ---------- */
+function render() {
+  const shown = V.slice(0, cur), last = shown[shown.length - 1] || null;
+  const night = last ? /^NIGHT_/.test(last.phase) : true;
+  document.documentElement.dataset.phase = night ? 'night' : 'day';
+  document.documentElement.dataset.view = mode;
+  document.querySelectorAll('#seg button').forEach(b => b.classList.toggle('on', b.dataset.v === mode));
+  renderTable(shown, last); renderLinks(last); renderHub(last, night);
+  renderFeed(shown); renderPlayhead();
+}
+function setCur(n) { cur = Math.max(0, Math.min(V.length, n)); render(); }
+function jump(pred, dir = 1) {
+  for (let i = cur + (dir > 0 ? 0 : -2); i >= 0 && i < V.length; i += dir) if (pred(V[i])) return setCur(i + 1);
+}
+let timer = null;
+function stop() { clearTimeout(timer); timer = null; $('#bPlay').textContent = '▶'; }
+function play() {
+  if (timer) return stop();
+  if (cur >= V.length) cur = 0;
+  $('#bPlay').textContent = '⏸';
+  const step = () => {
+    if (cur >= V.length) return stop();
+    setCur(cur + 1);
+    const e = V[cur-1];
+    timer = setTimeout(step, 500 + Math.min(1100, (e.text || '').length * 16));
+  };
+  timer = setTimeout(step, 200);
+}
+$('#bPlay').onclick = play;
+$('#bPrev').onclick = () => { stop(); setCur(cur - 1); };
+$('#bNext').onclick = () => { stop(); setCur(cur + 1); };
+$('#bVote').onclick = () => { stop(); jump(e => e.kind === 'resolution' && /^DAY_VOTE/.test(e.phase)); };
+$('#bDeath').onclick = () => { stop(); jump(e => e.deaths && e.deaths.length); };
+$('#seg').onclick = ev => {
+  const v = ev.target.dataset.v; if (!v || v === mode) return;
+  const sq = seqAtCursor(); mode = v; rebuildV(sq); buildTimeline(); render();
+};
+const track = $('#track'); let drag = false;
+const seek = ev => { const r = track.getBoundingClientRect(); stop(); setCur(Math.round((ev.clientX - r.left) / r.width * V.length)); };
+track.addEventListener('pointerdown', ev => { drag = true; track.setPointerCapture(ev.pointerId); seek(ev); });
+track.addEventListener('pointermove', ev => drag && seek(ev));
+track.addEventListener('pointerup', () => drag = false);
+$('#feed').addEventListener('click', ev => {
+  const t = ev.target.closest('.vote .tx'); if (t) t.classList.toggle('clamp');
+  const nh = ev.target.closest('.nh'); if (nh) { const sec = nh.parentElement; nightOpen[+sec.dataset.day] = !sec.classList.contains('open'); render(); return; }
+  const l = ev.target.closest('.tx.clampN, .tx.opened'); if (l) { l.classList.toggle('clampN'); l.classList.toggle('opened'); }
+});
+addEventListener('keydown', ev => {
+  if (ev.code === 'Space') { ev.preventDefault(); play(); }
+  else if (ev.code === 'ArrowRight') { stop(); setCur(cur + 1); }
+  else if (ev.code === 'ArrowLeft') { stop(); setCur(cur - 1); }
+});
+
+rebuildV(HASH.get('seq') != null ? +HASH.get('seq') : 41);
+buildTimeline(); render();
+</script>
+</body>
+</html>

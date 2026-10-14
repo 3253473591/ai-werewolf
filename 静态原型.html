@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>狼人杀 · LLM 观战</title>
+<style>
+  :root{
+    --bg:#0e1020; --panel:#161933; --panel2:#1c2040; --line:#2a2f58;
+    --text:#e9e7f3; --mute:#8b90b8; --gold:#e8b85a;
+    --wolf:#e0605c; --seer:#a98bff; --witch:#4fc58f; --hunter:#f0914a; --villager:#9aa0bd;
+    --serif:"Noto Serif SC","Songti SC",SimSun,serif;
+    --sans:"Inter","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    --mono:"JetBrains Mono","SF Mono",Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--text);font:14px/1.65 var(--sans);overflow:hidden}
+  button,input,select{font:inherit;color:inherit}
+  ::-webkit-scrollbar{width:8px}
+  ::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px}
+
+  /* ===== 顶栏 ===== */
+  .top{height:60px;display:flex;align-items:center;gap:20px;padding:0 20px;
+       background:linear-gradient(#1a1d3b,#141731);border-bottom:1px solid var(--line)}
+  .brand{font:700 18px var(--serif);letter-spacing:.15em;display:flex;align-items:center;gap:10px}
+  .brand i{width:26px;height:26px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#fff3cf,var(--gold) 60%,#a9791f);
+           box-shadow:0 0 14px #e8b85a66}
+  .phase{display:flex;align-items:center;gap:10px;padding:5px 14px;border:1px solid var(--line);border-radius:999px;background:var(--panel)}
+  .phase .dot{width:8px;height:8px;border-radius:50%;background:var(--witch);box-shadow:0 0 8px var(--witch)}
+  .phase b{font-family:var(--serif);color:var(--gold)}
+  .spacer{flex:1}
+  .stat{color:var(--mute);font-size:12px;font-family:var(--mono)}
+  .stat em{color:var(--text);font-style:normal}
+  .ctrl{display:flex;gap:8px}
+  .btn{padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);cursor:pointer;display:flex;gap:6px;align-items:center}
+  .btn:hover{border-color:var(--gold)}
+  .btn.danger{color:#ff8e8a}
+  .btn.danger:hover{border-color:var(--wolf)}
+  .btn small{color:var(--mute);font-size:11px}
+
+  /* ===== 三栏布局 ===== */
+  .grid{height:calc(100% - 60px);display:grid;grid-template-columns:290px 1fr 380px;gap:1px;background:var(--line)}
+  .col{background:var(--bg);overflow-y:auto;min-width:0}
+  .sec-title{font:600 12px var(--sans);letter-spacing:.2em;color:var(--mute);text-transform:uppercase;
+             padding:16px 18px 8px;display:flex;justify-content:space-between;align-items:center}
+
+  /* ===== 角色标签 ===== */
+  .role{font-size:11px;padding:1px 8px;border-radius:999px;border:1px solid currentColor;white-space:nowrap}
+  .role.wolf{color:var(--wolf);background:#e0605c1a}
+  .role.seer{color:var(--seer);background:#a98bff1a}
+  .role.witch{color:var(--witch);background:#4fc58f1a}
+  .role.hunter{color:var(--hunter);background:#f0914a1a}
+  .role.villager{color:var(--villager);background:#9aa0bd14}
+
+  /* ===== 左栏 ===== */
+  .card{margin:0 14px 6px;padding:12px 14px;background:var(--panel);border:1px solid var(--line);border-radius:12px}
+  .kv{display:flex;justify-content:space-between;padding:3px 0;font-size:13px}
+  .kv span:first-child{color:var(--mute)}
+  .seats{list-style:none;margin:0 14px;display:flex;flex-direction:column;gap:6px}
+  .seat{display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--panel);
+        border:1px solid var(--line);border-left:3px solid var(--c);border-radius:10px}
+  .seat .no{width:26px;height:26px;border-radius:7px;background:var(--c);color:#10122a;font:700 13px var(--mono);
+            display:grid;place-items:center;flex:none}
+  .seat div{flex:1;min-width:0;line-height:1.3}
+  .seat b{display:block;font-size:13px}
+  .seat small{color:var(--mute);font:11px var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+  .seat.speaking{box-shadow:0 0 0 1px var(--gold),0 0 16px #e8b85a33;background:var(--panel2)}
+  .seat.dead{opacity:.45}
+  .seat.dead b{text-decoration:line-through}
+  .seat.dead .no{background:#555a78}
+
+  details.cfg{margin:14px 14px 24px;background:var(--panel);border:1px solid var(--line);border-radius:12px}
+  details.cfg summary{padding:12px 14px;cursor:pointer;font-weight:600;list-style:none;display:flex;justify-content:space-between}
+  details.cfg summary::after{content:"＋";color:var(--mute)}
+  details.cfg[open] summary::after{content:"－"}
+  .cfg-body{padding:0 14px 14px;display:flex;flex-direction:column;gap:12px}
+  label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mute)}
+  .in{background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:6px 10px;font:12px var(--mono);color:var(--text);width:100%}
+  .ep{padding:10px;border:1px dashed var(--line);border-radius:9px;display:flex;flex-direction:column;gap:8px}
+  .ep-h{display:flex;justify-content:space-between;font-size:12px;color:var(--gold)}
+  .range{display:flex;align-items:center;gap:10px}
+  .range input{flex:1;accent-color:var(--gold)}
+  .range output{font:700 15px var(--mono);color:var(--gold);width:24px;text-align:right}
+  .add{text-align:center;padding:7px;border:1px dashed var(--line);border-radius:8px;color:var(--mute);cursor:pointer}
+
+  /* ===== 中栏：大桌 ===== */
+  .stage-head{position:sticky;top:0;z-index:5;padding:14px 28px 12px;background:linear-gradient(var(--bg) 80%,transparent)}
+  .stage-head h2{font:700 20px var(--serif);display:flex;align-items:center;gap:10px}
+  .stage-head h2 span{font:12px var(--sans);color:var(--mute);font-weight:400}
+  .order{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+  .order i{font:600 11px var(--mono);font-style:normal;padding:2px 9px;border-radius:999px;border:1px solid var(--line);color:var(--mute)}
+  .order i.done{color:var(--text);background:var(--panel2)}
+  .order i.now{color:#10122a;background:var(--gold);border-color:var(--gold)}
+  .order i.out{text-decoration:line-through;opacity:.4}
+
+  .feed{padding:6px 28px 40px;max-width:860px;margin:0 auto}
+  .divider{display:flex;align-items:center;gap:14px;margin:22px 0 14px;color:var(--gold);font:600 13px var(--serif);letter-spacing:.2em}
+  .divider::before,.divider::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--line),transparent)}
+  .sys{margin:10px auto;padding:9px 16px;max-width:560px;text-align:center;font-size:13px;color:var(--mute);
+       background:var(--panel);border:1px solid var(--line);border-radius:10px}
+  .sys b{color:var(--text)}
+  .sys.death b{color:var(--wolf)}
+
+  .msg{display:flex;gap:12px;margin:14px 0;align-items:flex-start}
+  .av{width:38px;height:38px;border-radius:10px;background:var(--c);color:#10122a;font:700 15px var(--mono);
+      display:grid;place-items:center;flex:none;box-shadow:0 2px 0 #0004}
+  .bd{flex:1;min-width:0}
+  .bd header{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+  .bd header b{color:var(--c)}
+  .bd header .model{font:11px var(--mono);color:var(--mute)}
+  .bd header time{margin-left:auto;font:11px var(--mono);color:#5f6490}
+  .bubble{background:var(--panel);border:1px solid var(--line);border-radius:4px 14px 14px 14px;padding:10px 14px;
+          font-family:var(--serif);font-size:15px;line-height:1.85}
+  .bubble .claim{color:var(--gold)}
+  .typing{display:inline-flex;gap:4px;padding:4px 0}
+  .typing span{width:6px;height:6px;border-radius:50%;background:var(--mute);animation:b 1.2s infinite}
+  .typing span:nth-child(2){animation-delay:.2s}.typing span:nth-child(3){animation-delay:.4s}
+  @keyframes b{0%,60%,100%{opacity:.25;transform:none}30%{opacity:1;transform:translateY(-3px)}}
+  .msg.now .bubble{border-style:dashed;border-color:var(--gold)}
+
+  /* ===== 右栏：狼人小桌 + 日志 ===== */
+  .wolf-table{margin:14px;border:1px solid #5a2a35;border-radius:14px;
+              background:linear-gradient(180deg,#2a1420,#1a1226);overflow:hidden}
+  .wolf-table>h3{padding:11px 16px;font:700 15px var(--serif);color:#ff9d99;display:flex;justify-content:space-between;
+                 align-items:center;background:#e0605c14;border-bottom:1px solid #5a2a35}
+  .wolf-table>h3 span{font:11px var(--sans);color:#b98a95;font-weight:400}
+  .wolf-body{padding:6px 14px 14px}
+  .wolf-table .msg{margin:12px 0;gap:10px}
+  .wolf-table .av{width:30px;height:30px;font-size:13px;border-radius:8px}
+  .wolf-table .bubble{background:#0000003a;border-color:#5a2a35;font-size:13.5px;padding:8px 12px;line-height:1.75}
+  .verdict{margin-top:10px;padding:8px 12px;border-radius:9px;background:#e0605c26;border:1px solid var(--wolf);
+           color:#ffb1ad;font-size:13px;text-align:center}
+
+  .log-head{position:sticky;top:0;background:var(--bg);z-index:3;padding-bottom:8px}
+  .chips{display:flex;gap:6px;padding:0 18px;flex-wrap:wrap}
+  .chip{font-size:11px;padding:2px 10px;border-radius:999px;border:1px solid var(--line);color:var(--mute);cursor:pointer}
+  .chip.on{background:var(--gold);color:#10122a;border-color:var(--gold)}
+  .log{list-style:none;padding:6px 14px 40px;font:12px/1.6 var(--mono)}
+  .log li{display:grid;grid-template-columns:42px 1fr;gap:8px;padding:6px 6px;border-bottom:1px solid #20244a;border-radius:6px}
+  .log li .n{color:#555a8a}
+  .log li.cur{background:#e8b85a14;outline:1px solid #e8b85a55}
+  .tag{display:inline-block;padding:0 6px;margin-right:6px;border-radius:4px;font-size:10.5px;font-weight:700}
+  .tag.sys{background:#3a3f6e;color:#c9ccf0;margin:0 6px 0 0;border:0;max-width:none;text-align:left}
+  .tag.skill{background:#a98bff30;color:var(--seer)}
+  .tag.kill{background:#e0605c30;color:var(--wolf)}
+  .tag.say{background:#e8b85a24;color:var(--gold)}
+  .tag.vote{background:#4fc58f24;color:var(--witch)}
+  .log .who{color:var(--c)}
+  .log .arrow{color:var(--gold)}
+
+  @media (max-width:1100px){
+    body{overflow:auto}.grid{grid-template-columns:1fr;height:auto}
+  }
+
+  /* ===== 配置抽屉 ===== */
+  #cfg-toggle{display:none}
+  .drawer-mask{position:fixed;inset:0;background:#05060fb8;opacity:0;pointer-events:none;transition:opacity .25s;z-index:50;cursor:pointer}
+  .drawer{position:fixed;top:0;right:0;bottom:0;width:600px;max-width:100vw;z-index:51;
+          background:var(--bg);border-left:1px solid var(--line);box-shadow:-20px 0 60px #0008;
+          display:flex;flex-direction:column;transform:translateX(100%);transition:transform .3s cubic-bezier(.2,.8,.2,1)}
+  #cfg-toggle:checked ~ .drawer-mask{opacity:1;pointer-events:auto}
+  #cfg-toggle:checked ~ .drawer{transform:none}
+
+  .dr-head{padding:16px 22px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--line);background:var(--panel)}
+  .dr-head h2{font:700 18px var(--serif);letter-spacing:.1em}
+  .dr-head .lock{font-size:11px;padding:2px 10px;border-radius:999px;border:1px solid var(--line);color:var(--mute)}
+  .dr-head .lock.on{color:var(--gold);border-color:var(--gold);background:#e8b85a14}
+  .dr-head label.x{margin-left:auto;cursor:pointer;color:var(--mute);font-size:20px;padding:0 6px}
+  .dr-head label.x:hover{color:var(--text)}
+
+  .dr-body{flex:1;overflow-y:auto;padding:6px 22px 24px}
+  .dr-sec{margin-top:22px}
+  .dr-sec>h3{display:flex;align-items:baseline;gap:10px;font:700 14px var(--serif);margin-bottom:10px}
+  .dr-sec>h3 i{font:700 11px var(--mono);font-style:normal;width:20px;height:20px;border-radius:6px;background:var(--gold);color:#10122a;display:grid;place-items:center}
+  .dr-sec>h3 small{font:12px var(--sans);color:var(--mute);font-weight:400}
+  .dr-sec>h3 .act{margin-left:auto;font:12px var(--sans);color:var(--gold);cursor:pointer}
+
+  /* 人数分段选择 */
+  .seg{display:grid;grid-template-columns:repeat(8,1fr);gap:6px}
+  .seg span{text-align:center;padding:7px 0;border:1px solid var(--line);border-radius:8px;background:var(--panel);font:600 14px var(--mono);color:var(--mute);cursor:pointer}
+  .seg span.on{background:var(--gold);color:#10122a;border-color:var(--gold)}
+  .preset{margin-top:8px;font-size:12px;color:var(--mute)}
+  .preset b{color:var(--text);font-weight:500}
+
+  /* 端点卡片 */
+  details.ep2{background:var(--panel);border:1px solid var(--line);border-radius:12px;margin-bottom:8px;overflow:hidden}
+  details.ep2[open]{border-color:#3b4180}
+  details.ep2>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;padding:11px 14px}
+  details.ep2>summary::-webkit-details-marker{display:none}
+  .st{width:9px;height:9px;border-radius:50%;flex:none;background:var(--mute)}
+  .st.ok{background:var(--witch);box-shadow:0 0 8px var(--witch)}
+  .st.err{background:var(--wolf);box-shadow:0 0 8px var(--wolf)}
+  .ep2 .nm{font-weight:600}
+  .ep2 .meta{font:11px var(--mono);color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ep2 .badge{margin-left:auto;font:11px var(--mono);white-space:nowrap}
+  .badge.ok{color:var(--witch)}.badge.err{color:var(--wolf)}
+  .ep2 .chev{color:var(--mute);transition:transform .2s}
+  details.ep2[open] .chev{transform:rotate(90deg)}
+  .ep2-body{padding:4px 14px 14px;display:grid;grid-template-columns:1fr 1fr;gap:12px;border-top:1px dashed var(--line);padding-top:14px}
+  .ep2-body .full{grid-column:1/-1}
+  .keyrow{display:flex;gap:6px}
+  .keyrow .eye{padding:0 10px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--mute);display:grid;place-items:center;cursor:pointer}
+  .ep2-foot{grid-column:1/-1;display:flex;align-items:center;gap:10px}
+  .ep2-foot .note{font-size:12px;color:var(--mute);flex:1}
+  .ep2-foot .note.err{color:var(--wolf)}
+  .btn.sm{padding:4px 12px;font-size:12px}
+  .add-ep{text-align:center;padding:10px;border:1px dashed var(--line);border-radius:12px;color:var(--mute);cursor:pointer}
+  .add-ep:hover{color:var(--gold);border-color:var(--gold)}
+
+  /* 座位分配表 */
+  .seat-tb{display:flex;flex-direction:column;gap:6px}
+  .seat-r{display:grid;grid-template-columns:28px 1fr 1.15fr 1.25fr;gap:8px;align-items:center}
+  .seat-r.h{font-size:11px;color:var(--mute);letter-spacing:.1em;padding:0 0 2px}
+  .seat-r .no{width:26px;height:26px;border-radius:7px;background:var(--c);color:#10122a;font:700 12px var(--mono);display:grid;place-items:center}
+  .seat-r .in{padding:6px 8px}
+  .seat-r .in.bad{border-color:var(--wolf);background:#e0605c14}
+  .warn{margin-top:8px;font-size:12px;color:var(--wolf)}
+
+  /* 底部操作栏 */
+  .dr-foot{padding:14px 22px;border-top:1px solid var(--line);background:var(--panel);display:flex;align-items:center;gap:10px}
+  .dr-foot .tip{flex:1;font-size:11px;color:var(--mute);line-height:1.5}
+  .btn.primary{background:var(--gold);color:#10122a;border-color:var(--gold);font-weight:700}
+
+  /* 左栏摘要卡 */
+  .cfg-sum{margin:14px;padding:14px;background:var(--panel);border:1px solid var(--line);border-radius:12px;display:flex;flex-direction:column;gap:10px}
+  .cfg-sum .row{display:flex;justify-content:space-between;font-size:13px}
+  .cfg-sum .row span:first-child{color:var(--mute)}
+
+  /* ===== 模型下拉 combobox（点击输入框展开，纯 CSS 用 :focus-within） ===== */
+  .seat-r{grid-template-columns:28px .8fr 1fr 1.6fr}   /* 覆盖原列宽，给模型列更多空间 */
+  .combo{position:relative}
+  .combo>.in{padding-right:26px;text-overflow:ellipsis}
+  .combo .ci{position:absolute;right:9px;top:50%;transform:translateY(-50%);color:var(--mute);font-size:11px;pointer-events:none}
+  .combo.cus>.in{padding-right:50px;border-color:var(--hunter)}
+  .combo.cus .ci{color:var(--hunter);font-size:10.5px}
+  .combo:focus-within>.in{border-color:var(--gold)}
+
+  .combo .pop{display:none;position:absolute;right:0;top:calc(100% + 4px);width:390px;z-index:20;
+    background:var(--panel2);border:1px solid #3b4180;border-radius:12px;box-shadow:0 18px 40px #000a;overflow:hidden}
+  .combo.up .pop{top:auto;bottom:calc(100% + 4px)}
+  .combo:focus-within .pop{display:block}
+
+  .pop-h{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--line);font-size:11px;color:var(--mute)}
+  .pop-h b{color:var(--text);font-weight:600}
+  .pop-h .rf{margin-left:auto;color:var(--gold);cursor:pointer}
+  .pop-tabs{display:flex;gap:6px;padding:8px 12px 2px}
+  .pop-list{max-height:250px;overflow-y:auto;padding:4px 6px 6px}
+  .grp{display:flex;justify-content:space-between;padding:9px 8px 4px;font:600 10.5px var(--mono);letter-spacing:.12em;color:#6f75a8;text-transform:uppercase}
+  .opt{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:7px;cursor:pointer;outline:none}
+  .opt:hover,.opt:focus{background:#2a2f58}
+  .opt.sel{background:#e8b85a14}
+  .opt .ck{width:12px;color:var(--gold);font-size:11px}
+  .opt .id{flex:1;min-width:0;font:12px var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .opt .id mark{background:none;color:var(--gold);font-weight:700}
+  .opt .m{font:11px var(--mono);color:var(--mute);white-space:nowrap}
+  .opt .tg{font-size:10px;padding:0 6px;border-radius:4px;background:#a98bff26;color:var(--seer)}
+  .opt.custom{border:1px dashed var(--gold);color:var(--gold);margin-bottom:4px}
+  .pop-more{padding:8px;text-align:center;font-size:11px;color:#6f75a8}
+  .pop-empty{padding:18px 16px;text-align:center;font-size:12px;color:var(--mute);line-height:1.8}
+  .pop-empty .wn{color:var(--wolf);font-weight:600}
+  .pop-empty .btn{margin-top:8px}
+  .pop-f{display:flex;justify-content:space-between;padding:7px 12px;border-top:1px solid var(--line);font-size:11px;color:#6f75a8}
+
+  /* 提示词注入说明 */
+  .inj{margin-top:12px;padding:10px 12px;border:1px dashed var(--line);border-radius:10px;font-size:12px;color:var(--mute);line-height:1.6}
+  .inj b{color:var(--text);font-weight:500}
+</style>
+</head>
+<body>
+
+<!-- ============ 顶栏 ============ -->
+<header class="top">
+  <div class="brand"><i></i>狼人杀 · 观战席</div>
+  <div class="phase"><span class="dot"></span><b>第 1 天 · 白天</b><span style="color:var(--mute)">自由发言</span></div>
+  <div class="spacer"></div>
+  <div class="stat">存活 <em>7/8</em> · 步数 <em>#0011</em> · API 调用 <em>23</em> · 用时 <em>04:12</em></div>
+  <div class="ctrl">
+    <label class="btn" for="cfg-toggle">⚙ 配置</label>
+    <button class="btn">⏸ 暂停</button>
+    <button class="btn">⏭ 单步 <small>调用 1 次</small></button>
+    <button class="btn danger">⏹ 结束</button>
+  </div>
+</header>
+
+<main class="grid">
+
+  <!-- ============ 左栏：状态 / 座位 / 设置 ============ -->
+  <aside class="col">
+    <div class="sec-title">对局状态</div>
+    <div class="card">
+      <div class="kv"><span>状态</span><span style="color:var(--witch)">● 运行中</span></div>
+      <div class="kv"><span>阶段</span><span>白天 · 发言</span></div>
+      <div class="kv"><span>阵营</span><span><span style="color:var(--wolf)">狼 2</span> / <span style="color:var(--witch)">好人 5</span></span></div>
+      <div class="kv"><span>当前发言</span><span style="color:var(--gold)">座5 · Qwen</span></div>
+    </div>
+
+    <div class="sec-title">玩家席 <span style="letter-spacing:0;text-transform:none">上帝视角</span></div>
+    <ul class="seats">
+      <li class="seat" style="--c:#6ea8fe"><span class="no">1</span><div><b>GPT-4o</b><small>openai · gpt-4o</small></div><span class="role wolf">狼人</span></li>
+      <li class="seat" style="--c:#c792ea"><span class="no">2</span><div><b>Claude</b><small>anthropic · sonnet</small></div><span class="role seer">预言家</span></li>
+      <li class="seat" style="--c:#7fdbca"><span class="no">3</span><div><b>Gemini</b><small>google · gemini-pro</small></div><span class="role villager">平民</span></li>
+      <li class="seat" style="--c:#ffcb6b"><span class="no">4</span><div><b>DeepSeek</b><small>deepseek · v3</small></div><span class="role wolf">狼人</span></li>
+      <li class="seat speaking" style="--c:#f78c6c"><span class="no">5</span><div><b>Qwen</b><small>aliyun · qwen-max</small></div><span class="role witch">女巫</span></li>
+      <li class="seat" style="--c:#89ddff"><span class="no">6</span><div><b>Llama</b><small>local · llama-3.1-70b</small></div><span class="role hunter">猎人</span></li>
+      <li class="seat" style="--c:#c3e88d"><span class="no">7</span><div><b>Mistral</b><small>mistral · large</small></div><span class="role villager">平民</span></li>
+      <li class="seat dead" style="--c:#ff869a"><span class="no">8</span><div><b>Kimi</b><small>moonshot · k2 · 夜间出局</small></div><span class="role villager">平民</span></li>
+    </ul>
+
+    <div class="sec-title">对局配置</div>
+    <div class="cfg-sum">
+      <div class="row"><span>端点</span><span>3 个 · <span style="color:var(--witch)">2 连通</span> · <span style="color:var(--wolf)">1 异常</span></span></div>
+      <div class="row"><span>玩家</span><span>8 人</span></div>
+      <label class="btn" for="cfg-toggle" style="justify-content:center">⚙ 打开配置</label>
+    </div>
+  </aside>
+
+  <!-- ============ 中栏：白天大桌 ============ -->
+  <section class="col">
+    <div class="stage-head">
+      <h2>🪑 大桌 <span>白天公开讨论 · 所有玩家可见</span></h2>
+      <div class="order">
+        <i class="done">1 ✓</i><i class="done">2 ✓</i><i class="done">3 ✓</i><i class="done">4 ✓</i>
+        <i class="now">5 …</i><i>6</i><i>7</i><i class="out">8</i>
+      </div>
+    </div>
+
+    <div class="feed">
+      <div class="divider">第 1 天 · 天亮了</div>
+      <div class="sys death">昨夜 <b>8号 Kimi</b> 被杀害，出局。<br>（女巫未使用解药）</div>
+
+      <article class="msg" style="--c:#6ea8fe">
+        <div class="av">1</div>
+        <div class="bd">
+          <header><b>GPT-4o</b><span class="role wolf">狼人</span><span class="model">gpt-4o</span><time>#0006</time></header>
+          <div class="bubble">8号走得很突然，不过第一晚死亡没有任何信息可挖。我先听听其他人的看法，特别是有身份的朋友，请尽快跳出来，别让狼人拖到后面。</div>
+        </div>
+      </article>
+
+      <article class="msg" style="--c:#c792ea">
+        <div class="av">2</div>
+        <div class="bd">
+          <header><b>Claude</b><span class="role seer">预言家</span><span class="model">claude-sonnet</span><time>#0007</time></header>
+          <div class="bubble"><span class="claim">我是预言家。</span>昨晚我查验了 <span class="claim">4号</span>，结果是<span class="claim">狼人</span>。我知道第一天就跳身份风险很大，但信息必须摆在桌面上，今天请大家把票投给 4号。</div>
+        </div>
+      </article>
+
+      <article class="msg" style="--c:#7fdbca">
+        <div class="av">3</div>
+        <div class="bd">
+          <header><b>Gemini</b><span class="role villager">平民</span><span class="model">gemini-pro</span><time>#0008</time></header>
+          <div class="bubble">2号的发言逻辑自洽，跳身份的时机也合理。在没有对跳之前，我倾向于相信 2号。4号，你有什么要解释的吗？</div>
+        </div>
+      </article>
+
+      <article class="msg" style="--c:#ffcb6b">
+        <div class="av">4</div>
+        <div class="bd">
+          <header><b>DeepSeek</b><span class="role wolf">狼人</span><span class="model">deepseek-v3</span><time>#0009</time></header>
+          <div class="bubble">我是好人，而且 <span class="claim">我才是真预言家</span>。昨晚我验了 2号，结果是狼人。2号是在抢身份、冲我的位置。各位，请看清到底谁在撒谎。</div>
+        </div>
+      </article>
+
+      <article class="msg now" style="--c:#f78c6c">
+        <div class="av">5</div>
+        <div class="bd">
+          <header><b>Qwen</b><span class="role witch">女巫</span><span class="model">qwen-max</span><time>#0010 · 生成中</time></header>
+          <div class="bubble"><span class="typing"><span></span><span></span><span></span></span></div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- ============ 右栏：狼人小桌 + 行动日志 ============ -->
+  <aside class="col">
+    <div class="wolf-table">
+      <h3>🐺 狼人小桌 <span>第 1 夜 · 仅狼人可见</span></h3>
+      <div class="wolf-body">
+        <article class="msg" style="--c:#6ea8fe">
+          <div class="av">1</div>
+          <div class="bd">
+            <header><b>GPT-4o</b><span class="model">座1</span></header>
+            <div class="bubble">首夜没信息。我提议刀 8号，Kimi 的开局措辞很像神职。</div>
+          </div>
+        </article>
+        <article class="msg" style="--c:#ffcb6b">
+          <div class="av">4</div>
+          <div class="bd">
+            <header><b>DeepSeek</b><span class="model">座4</span></header>
+            <div class="bubble">同意。明天如果有人跳预言家，我们先对跳，我来抗推，你站我边。</div>
+          </div>
+        </article>
+        <article class="msg" style="--c:#6ea8fe">
+          <div class="av">1</div>
+          <div class="bd">
+            <header><b>GPT-4o</b><span class="model">座1</span></header>
+            <div class="bubble">好，我会装作中立。就这么定。</div>
+          </div>
+        </article>
+        <div class="verdict">🗡 夜间决议：击杀 <b>座8 · Kimi</b></div>
+      </div>
+    </div>
+
+    <div class="log-head">
+      <div class="sec-title">行动日志</div>
+      <div class="chips">
+        <span class="chip on">全部</span><span class="chip">发言</span><span class="chip">技能</span><span class="chip">投票</span><span class="chip">系统</span>
+      </div>
+    </div>
+
+    <ul class="log">
+      <li><span class="n">#0001</span><span><span class="tag sys">系统</span>对局开始，8 名玩家，角色已分配</span></li>
+      <li><span class="n">#0002</span><span><span class="tag skill">技能</span><span class="who" style="--c:#c792ea">座2 Claude</span> 查验 <span class="who" style="--c:#ffcb6b">座4</span> <span class="arrow">→</span> 狼人</span></li>
+      <li><span class="n">#0003</span><span><span class="tag kill">击杀</span>狼人投票：座1→8，座4→8，<span class="arrow">决议 座8</span></span></li>
+      <li><span class="n">#0004</span><span><span class="tag skill">技能</span><span class="who" style="--c:#f78c6c">座5 Qwen</span> 女巫：不使用解药 / 不使用毒药</span></li>
+      <li><span class="n">#0005</span><span><span class="tag sys">系统</span>天亮，座8 Kimi 出局</span></li>
+      <li><span class="n">#0006</span><span><span class="tag say">发言</span><span class="who" style="--c:#6ea8fe">座1 GPT-4o</span> · 142 字 · 1.8s</span></li>
+      <li><span class="n">#0007</span><span><span class="tag say">发言</span><span class="who" style="--c:#c792ea">座2 Claude</span> · 118 字 · 2.1s <br>└ 声明身份：预言家，查杀 座4</span></li>
+      <li><span class="n">#0008</span><span><span class="tag say">发言</span><span class="who" style="--c:#7fdbca">座3 Gemini</span> · 76 字 · 1.5s</span></li>
+      <li><span class="n">#0009</span><span><span class="tag say">发言</span><span class="who" style="--c:#ffcb6b">座4 DeepSeek</span> · 89 字 · 3.4s <br>└ 声明身份：预言家（对跳），查杀 座2</span></li>
+      <li class="cur"><span class="n">#0010</span><span><span class="tag say">发言</span><span class="who" style="--c:#f78c6c">座5 Qwen</span> · 等待响应…</span></li>
+      <li style="opacity:.4"><span class="n">#0011</span><span><span class="tag sys">待办</span>座6 → 座7 → 投票</span></li>
+    </ul>
+  </aside>
+</main>
+
+<!-- ============ 配置抽屉 ============ -->
+<input type="checkbox" id="cfg-toggle">
+<label class="drawer-mask" for="cfg-toggle"></label>
+
+<aside class="drawer">
+  <div class="dr-head">
+    <h2>对局配置</h2>
+    <span class="lock">未开始 · 可编辑</span>
+    <!-- 对局中显示：<span class="lock on">🔒 对局中 · 只读（暂停后可换模型）</span> -->
+    <label class="x" for="cfg-toggle">✕</label>
+  </div>
+
+  <div class="dr-body">
+
+    <!-- 1 玩家数 -->
+    <div class="dr-sec">
+      <h3><i>1</i>玩家数量 <small>3–10 人</small></h3>
+      <div class="seg">
+        <span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span class="on">8</span><span>9</span><span>10</span>
+      </div>
+      <div class="preset">8 人局默认配置：<b>2 狼人 · 预言家 · 女巫 · 猎人 · 3 平民</b></div>
+    </div>
+
+    <!-- 2 端点池 -->
+    <div class="dr-sec">
+      <h3><i>2</i>端点池 <small>先把“怎么连”填好，座位里再选用</small><span class="act">全部测试</span></h3>
+
+      <details class="ep2">
+        <summary>
+          <span class="st ok"></span><span class="nm">OpenAI 官方</span>
+          <span class="meta">api.openai.com/v1 · 1 座使用</span>
+          <span class="badge ok">380ms</span><span class="chev">›</span>
+        </summary>
+      </details>
+
+      <details class="ep2" open>
+        <summary>
+          <span class="st ok"></span><span class="nm">OpenRouter 聚合</span>
+          <span class="meta">openrouter.ai/api/v1 · 6 座使用</span>
+          <span class="badge ok">214ms</span><span class="chev">›</span>
+        </summary>
+        <div class="ep2-body">
+          <label class="f full">名称<input class="in" value="OpenRouter 聚合"></label>
+          <label class="f full">base_url<input class="in" value="https://openrouter.ai/api/v1"></label>
+          <label class="f full">API Key
+            <div class="keyrow"><input class="in" type="password" value="sk-or-xxxxxxxxxxxxxxxx"><span class="eye">👁</span></div>
+          </label>
+          <label class="f full">协议
+            <select class="in"><option>OpenAI 兼容（默认）</option><option>Anthropic 原生</option><option>Gemini 原生</option></select>
+          </label>
+          <label class="f">超时（秒）<input class="in" value="60"></label>
+          <label class="f">最大并发<input class="in" value="2"></label>
+          <div class="ep2-foot">
+            <span class="note">✓ 已连通 · 拉取到 312 个模型 · 缓存 10 分钟</span>
+            <button class="btn sm">测试连接</button>
+            <button class="btn sm">↻ 刷新模型</button>
+            <button class="btn sm danger">删除</button>
+          </div>
+        </div>
+      </details>
+
+      <details class="ep2">
+        <summary>
+          <span class="st err"></span><span class="nm">本地 vLLM</span>
+          <span class="meta">localhost:8000/v1 · 1 座使用</span>
+          <span class="badge err">超时</span><span class="chev">›</span>
+        </summary>
+      </details>
+
+      <div class="add-ep">＋ 添加端点</div>
+    </div>
+
+    <!-- 3 座位分配 -->
+    <div class="dr-sec">
+      <h3><i>3</i>座位分配 <small>每个座位 = 一个端点 + 一个模型</small><span class="act">按端点轮流分配</span></h3>
+      <div class="seat-tb">
+        <div class="seat-r h"><span>座</span><span>显示名</span><span>端点</span><span>模型</span></div>
+
+        <!-- 座 1 -->
+        <div class="seat-r" style="--c:#6ea8fe"><span class="no">1</span><input class="in" value="GPT-4o">
+          <select class="in"><option>OpenAI 官方</option></select>
+          <div class="combo">
+            <input class="in" value="gpt-4o" spellcheck="false"><span class="ci">▾</span>
+            <div class="pop">
+              <div class="pop-h"><b>OpenAI 官方</b><span>62 个模型</span><span class="rf">↻ 刷新</span></div>
+              <div class="pop-list">
+                <div class="opt sel" tabindex="-1"><span class="ck">✓</span><span class="id">gpt-4o</span><span class="m">2024-05</span></div>
+                <div class="opt" tabindex="-1"><span class="ck"></span><span class="id">gpt-4o-mini</span><span class="m">2024-07</span></div>
+                <div class="opt" tabindex="-1"><span class="ck"></span><span class="id">gpt-4.1</span><span class="m">2025-04</span></div>
+                <div class="opt" tabindex="-1"><span class="ck"></span><span class="id">o3</span><span class="tg">推理</span><span class="m">2025-04</span></div>
+                <div class="opt" tabindex="-1"><span class="ck"></span><span class="id">o4-mini</span><span class="tg">推理</span><span class="m">2025-04</span></div>
+                <div class="pop-more">… 还有 57 个，输入关键字筛选</div>
+              </div>
+              <div class="pop-f"><span>↑↓ 选择 · ↵ 确认</span><span>官方接口不返回价格与上下文</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 座 2 -->
+        <div class="seat-r" style="--c:#c792ea"><span class="no">2</span><input class="in" value="Claude">
+          <select class="in"><option>OpenRouter 聚合</option></select>
+          <div class="combo">
+            <input class="in" value="anthropic/claude-sonnet-4" spellcheck="false"><span class="ci">▾</span>
+            <div class="pop">
+              <div class="pop-h"><b>OpenRouter 聚合</b><span>312 个模型</span><span class="rf">↻ 刷新</span></div>
+              <div class="pop-tabs"><span class="chip on">全部</span><span class="chip">最近使用</span><span class="chip">推理</span></div>
+              <div class="pop-list">
+                <div class="grp"><span>anthropic</span><span>9</span></div>
+                <div class="opt sel" tabindex="-1"><span class="ck">✓</span><span class="id">claude-sonnet-4</span><span class="m">200K · $3/$15</span></div>
+                <div class="opt" tabindex="-1"><span class="ck"></span><span class="id">claude-opus-4</span><span class="m">200K · $15/$75</span></div>
+                <div class="opt" tabindex="-1"><span class="ck"></span><span class="id">claude-3.5-haiku</span><span class="m">200K · $0.8/$4</span></div>
+                <div class="grp"><span>google</span><span>14</span></div>
+                <div class="opt" tabindex="-1"><span class="ck"></span><span class="id">gemini-2.5-pro</span><span class="tg">推理</span><span class="m">1M · $1.25/$10</span></div>
+                <div class="opt" tabindex="-1"><span class="ck"></span><span class="id">gemini-2.5-flash</span><span class="m">1M · $0.3/$2.5</span></div>
+                <div class="grp"><span>deepseek</span><span>8</span></div>
+                <div class="opt" tabindex="-1"><span class="ck"></span><span class="id">deepseek-chat</span><span class="m">64K · $0.3/$1</span></div>
+                <div class="opt" tabindex="-1"><span class="ck"></span><span class="id">deepseek-r1</span><span class="tg">推理</span><span class="m">64K · $0.5/$2.2</span></div>
+                <div class="pop-more">… 还有 290+ 个，输入关键字筛选</div>
+              </div>
+              <div class="pop-f"><span>↑↓ 选择 · ↵ 确认</span><span>价格：输入/输出 每百万 token</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 座 3 简版占位 -->
+        <div class="seat-r" style="--c:#7fdbca"><span class="no">3</span><input class="in" value="Gemini">
+          <select class="in"><option>OpenRouter 聚合</option></select>
+          <div class="combo"><input class="in" value="google/gemini-2.5-pro" spellcheck="false"><span class="ci">▾</span></div>
+        </div>
+
+        <!-- 座 4 简版占位 -->
+        <div class="seat-r" style="--c:#ffcb6b"><span class="no">4</span><input class="in" value="DeepSeek">
+          <select class="in"><option>OpenRouter 聚合</option></select>
+          <div class="combo"><input class="in" value="deepseek/deepseek-chat" spellcheck="false"><span class="ci">▾</span></div>
+        </div>
+
+        <!-- 座 5 简版占位 -->
+        <div class="seat-r" style="--c:#f78c6c"><span class="no">5</span><input class="in" value="Qwen">
+          <select class="in"><option>OpenRouter 聚合</option></select>
+          <div class="combo"><input class="in" value="qwen/qwen-max" spellcheck="false"><span class="ci">▾</span></div>
+        </div>
+
+        <!-- 座 6 异常端点，向上展开 -->
+        <div class="seat-r" style="--c:#89ddff"><span class="no">6</span><input class="in" value="Llama">
+          <select class="in bad"><option>本地 vLLM</option></select>
+          <div class="combo up">
+            <input class="in" value="llama-3.1-70b" spellcheck="false"><span class="ci">▾</span>
+            <div class="pop">
+              <div class="pop-empty">
+                <div class="wn">⚠ 无法拉取「本地 vLLM」的模型列表</div>
+                连接超时。你仍可直接输入模型 ID，<br>但开局前建议先修复端点。
+                <div><button class="btn sm">重试拉取</button></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 座 7 简版占位 -->
+        <div class="seat-r" style="--c:#c3e88d"><span class="no">7</span><input class="in" value="Mistral">
+          <select class="in"><option>OpenRouter 聚合</option></select>
+          <div class="combo"><input class="in" value="mistralai/mistral-large" spellcheck="false"><span class="ci">▾</span></div>
+        </div>
+
+        <!-- 座 8 自定义 ID，向上展开 -->
+        <div class="seat-r" style="--c:#ff869a"><span class="no">8</span><input class="in" value="Kimi">
+          <select class="in"><option>OpenRouter 聚合</option></select>
+          <div class="combo cus up">
+            <input class="in" value="moonshotai/kimi-k2-0905" spellcheck="false"><span class="ci">自定义</span>
+            <div class="pop">
+              <div class="pop-h"><b>OpenRouter 聚合</b><span>2 个匹配</span></div>
+              <div class="pop-list">
+                <div class="opt custom" tabindex="-1"><span class="ck">↵</span><span class="id">使用自定义 ID：moonshotai/kimi-k2-0905</span></div>
+                <div class="grp"><span>moonshotai</span><span>2</span></div>
+                <div class="opt" tabindex="-1"><span class="ck"></span><span class="id"><mark>moonshotai/kimi-k2</mark></span><span class="m">128K · $0.6/$2.5</span></div>
+                <div class="opt" tabindex="-1"><span class="ck"></span><span class="id"><mark>moonshotai/kimi</mark>-dev-72b</span><span class="m">131K · 免费</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="warn">⚠ 座 6 使用的端点“本地 vLLM”连接异常，开局前请修复或更换。</div>
+      <div class="inj">🧩 提示词由后端注入：<b>Main Prompt</b>（通用）＋ <b>Character Prompt</b>（按角色动态）。此处只读，不可编辑。</div>
+    </div>
+  </div>
+
+  <div class="dr-foot">
+    <span class="tip">API Key 只发送到你的后端，<br>不写入浏览器本地存储。</span>
+    <label class="btn" for="cfg-toggle">取消</label>
+    <button class="btn">保存配置</button>
+    <button class="btn primary">开始新对局</button>
+  </div>
+</aside>
+
+</body>
+</html>

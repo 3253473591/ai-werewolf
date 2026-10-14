@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>狼人杀 · LLM 观战</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<!-- ============ 顶栏 ============ -->
+<header class="top">
+  <div class="brand"><i></i>狼人杀 · 观战席</div>
+  <div class="phase">
+    <span class="dot" id="phaseDot" :style="phaseDot"></span>
+    <b id="phaseText">{{ phaseText }}</b>
+    <span id="phaseSub" style="color:var(--mute)">{{ phaseSub }}</span>
+  </div>
+  <div class="spacer"></div>
+  <div class="stat">存活 <em id="statAlive">{{ aliveText }}</em>
+    · 步数 <em id="statSteps">{{ store.S.events.length }}</em>
+    · API 调用 <em id="statCalls">{{ store.S.relay.calls || 0 }}</em>
+    · 用时 <em id="statTime">{{ elapsedText(store.S.startedAt, store.now) }}</em></div>
+  <div class="ctrl">
+    <label class="btn" for="cfg-toggle">⚙ 配置</label>
+    <label class="switch" title="离线模式：本地假模型，不消耗额度，用来试 UI 和跑通流程">
+      <input type="checkbox" id="optStub"><span>离线模式</span>
+    </label>
+    <!-- **不按前端缓存的状态禁用按钮。** 前端状态一旦滞后（比如游戏在别处开起来、
+         或 SSE 断过），按钮就整个点不动，用户只能干瞪眼 —— 这正是"无法暂停和取消"。
+         允许点，点了没效果再给明确提示。 -->
+    <button class="btn" id="btnPause" @click="togglePause()">{{ store.S.gate.paused ? '▶ 继续' : '⏸ 暂停' }}</button>
+    <button class="btn" id="btnStep" :disabled="!store.S.gate.paused" @click="stepOnce()">⏭ 单步 <small>调用 1 次</small></button>
+    <button class="btn danger" id="btnAbort" @click="abortGame()">⏹ 结束</button>
+  </div>
+</header>
+
+<div id="toast"></div>
+<div class="gatebar" id="gateBar" :class="gateVisible ? 'show' : ''">{{ gateText }}</div>
+
+<!-- ============ 结算动画（好人 / 狼人获胜） ============ -->
+<div class="winfx" id="winFx" :class="winFxClass()" @click="hideWinFx()">
+  <template v-if="store.winfx">
+    <div class="halo"></div>
+    <div class="rays"></div>
+    <div class="card">
+      <!-- 用可选链：收起动画时子节点的求值可能比 v-if 早一步，
+           直接 store.winfx.icon 会在 console 里刷 TypeError -->
+      <div class="emblem">{{ store.winfx?.icon }}</div>
+      <h1>{{ store.winfx?.title }}</h1>
+      <div class="sub">{{ store.winfx?.sub }}</div>
+      <div class="sub dim">{{ store.winfx?.stats }}</div>
+      <div class="tip">点击任意处关闭</div>
+    </div>
+  </template>
+</div>
+
+<main class="grid">
+
+  <!-- ============ 左栏：状态 / 座位 / 设置 ============ -->
+  <aside class="col">
+    <div class="sec-title">对局状态</div>
+    <div class="card">
+      <div class="kv"><span>状态</span><span id="stStatus" :style="`color:${stStatusColor}`">{{ stStatusText }}</span></div>
+      <div class="kv"><span>阶段</span><span id="stPhase">{{ stPhase }}</span></div>
+      <div class="kv"><span>阵营</span><span id="stCamp">
+        <template v-if="store.S.seats.length">
+          <span style="color:var(--wolf)">狼 {{ wolfAlive }}</span> /
+          <span style="color:var(--witch)">好人 {{ goodAlive }}</span>
+        </template><template v-else>–</template>
+      </span></div>
+      <div class="kv"><span>当前发言</span><span id="stSpeaking" style="color:var(--gold)">{{ speakingText }}</span></div>
+    </div>
+
+    <div class="sec-title">玩家席 <span style="letter-spacing:0;text-transform:none">上帝视角</span></div>
+    <ul class="seats" id="seatList">
+      <li class="seat" style="opacity:.45" v-if="!store.S.seats.length">
+        <span class="no">–</span>
+        <div><b>未开局</b><small>在「⚙ 配置」里点「开始新对局」</small></div>
+        <span class="role none">–</span>
+      </li>
+      <li v-for="s in seatViews" :key="s.no" class="seat" :class="s.cls" :style="`--c:${s.color}`">
+        <span class="no">{{ s.no }}</span>
+        <div><b>{{ s.label }}</b><small>{{ s.sub }}</small></div>
+        <span class="role" :class="s.roleClass">{{ s.roleCn }}</span>
+      </li>
+    </ul>
+
+    <div class="sec-title">对局配置</div>
+    <div class="cfg-sum">
+      <div class="row"><span>端点</span><span id="cfgEpSum">–</span></div>
+      <div class="row"><span>玩家</span><span id="cfgSeatSum">–</span></div>
+      <div class="row"><span>模式</span><span id="cfgMode">{{ store.UI.mode === 'stub' ? '离线模式' : '真实对局' }}</span></div>
+      <label class="btn" for="cfg-toggle" style="justify-content:center">⚙ 打开配置</label>
+    </div>
+  </aside>
+
+  <!-- ============ 中栏：白天大桌 ============ -->
+  <section class="col">
+    <div class="stage-head">
+      <h2>🪑 大桌 <span id="tableSub">白天公开讨论 · 所有玩家可见</span></h2>
+      <div class="order" id="speakOrder">
+        <i v-for="c in order" :key="c.no" :class="c.cls">{{ c.no }}{{ c.mark }}</i>
+      </div>
+    </div>
+
+    <div class="feed" id="feed">
+      <div class="empty-hint" v-if="!store.S.events.length">
+        还没有对局。点「⚙ 配置」→「开始新对局」。<br>
+        想先试 UI 又不想烧额度，勾上顶栏的 <b>离线模式</b>。
+      </div>
+      <div v-else class="feed-list">
+        <!-- 注意：v-for 必须挂在真实元素上，不能是 <template v-for> ——
+             petite-vue 在 template 的 fragment 里拿不到 parentElement，
+             里面的 v-if 会在 setAttribute/insertBefore 时炸掉。 -->
+        <div v-for="it in feed" :key="it.key" class="feed-item">
+          <div class="divider" v-if="it.type === 'divider'">第 {{ it.day }} 天</div>
+          <article class="msg" v-else-if="it.type === 'msg'" :style="`--c:${it.color}`">
+            <div class="av">{{ it.no }}</div>
+            <div class="bd">
+              <header><b>{{ it.label }}</b>
+                <span class="role" :class="it.roleClass">{{ it.roleCn }}</span>
+                <span class="model">{{ it.model }}</span>
+                <time>#{{ pad4(it.seq) }}</time></header>
+              <div class="bubble">{{ it.text }}</div>
+            </div>
+          </article>
+          <div v-else :class="it.death ? 'sys death' : 'sys'">
+            <span v-if="!it.plain && it.no"><b>{{ it.no }}号 {{ it.label }}</b> </span>{{ it.text }}
+          </div>
+        </div>
+        <div class="empty-hint" v-if="!feed.length">大桌还没有公开内容</div>
+      </div>
+      <!-- 正在生成：下一个气泡立刻出现，别让大桌几分钟没动静 -->
+      <article v-if="pending && pending.where === 'feed'" class="msg now pending"
+               :style="`--c:${pending?.color}`">
+        <div class="av">{{ pending?.no }}</div>
+        <div class="bd">
+          <header><b>{{ pending?.label }}</b>
+            <span class="role" :class="pending?.roleClass">{{ pending?.roleCn }}</span>
+            <span class="model">{{ pending?.model }}</span>
+            <time>{{ pending?.elapsed }}s</time></header>
+          <div class="bubble">
+            <span class="typing"><span></span><span></span><span></span></span>
+            <span class="pending-hint">{{ pending?.hint }}</span>
+          </div>
+        </div>
+      </article>
+      <div class="pending-quiet" v-if="pending && pending.where === 'quiet'">
+        <span class="typing"><span></span><span></span><span></span></span>
+        {{ pending?.no }}号 {{ pending?.label }} {{ pending?.hint }}
+        · {{ pending?.phaseCn }} · {{ pending?.elapsed }}s
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 右栏：狼人小桌 + 行动日志 ============ -->
+  <aside class="col side-right">
+    <div class="wolf-table" id="wolfTable">
+      <h3>🐺 狼人小桌 <span id="wolfSub">{{ wolfSub }}</span></h3>
+      <div class="wolf-body" id="wolfBody">
+        <div class="empty-hint" style="padding:20px 0" v-if="!wolf.length">还没有夜间频道内容</div>
+        <div v-for="it in wolf" :key="it.key" class="wolf-item">
+          <article class="msg" v-if="it.type === 'msg'" :style="`--c:${it.color}`">
+            <div class="av">{{ it.no }}</div>
+            <div class="bd">
+              <header><b>{{ it.label }}</b><span class="model">座{{ it.no }}</span></header>
+              <div class="bubble">{{ it.text }}</div>
+            </div>
+          </article>
+          <div class="verdict" v-else>🗡 {{ it.text }}</div>
+        </div>
+        <article v-if="pending && pending.where === 'wolf'" class="msg now pending"
+                 :style="`--c:${pending?.color}`">
+          <div class="av">{{ pending?.no }}</div>
+          <div class="bd">
+            <header><b>{{ pending?.label }}</b>
+              <span class="model">{{ pending?.model }}</span>
+              <time>{{ pending?.elapsed }}s</time></header>
+            <div class="bubble">
+              <span class="typing"><span></span><span></span><span></span></span>
+              <span class="pending-hint">{{ pending?.hint }}</span>
+            </div>
+          </div>
+        </article>
+      </div>
+    </div>
+
+    <div class="log-head">
+      <div class="sec-title">行动日志</div>
+      <div class="chips" id="logChips">
+        <span v-for="c in LOG_CHIPS" :key="c.f" :data-f="c.f"
+              :class="store.logFilter === c.f ? 'chip on' : 'chip'"
+              @click="setFilter(c.f)">{{ c.name }}</span>
+      </div>
+    </div>
+
+    <ul class="log" id="logList">
+      <li style="opacity:.45" v-if="!logs.length"><span class="n">–</span>
+        <span>{{ store.S.events.length ? '该分类暂无记录' : '还没有日志' }}</span></li>
+      <li v-for="it in logs" :key="it.key" :data-cls="it.cls">
+        <span class="n">#{{ pad4(it.seq) }}</span>
+        <span><span :class="'tag ' + it.cls">{{ it.tag }}</span><span v-if="it.who" class="who"
+          :style="`--c:${it.who.color}`">座{{ it.who.no }} {{ it.who.label }}</span><span v-if="it.who"> </span>{{ it.text }}</span>
+      </li>
+    </ul>
+  </aside>
+</main>
+
+<!-- ============ 配置抽屉 ============ -->
+<!-- 抽屉仍是命令式实现（只在用户操作时重画，不属于 SSE 热路径），
+     所以这一段里没有 petite-vue 指令 —— 见 app/drawer.js 顶部注释。 -->
+<input type="checkbox" id="cfg-toggle">
+<label class="drawer-mask" for="cfg-toggle"></label>
+
+<aside class="drawer">
+  <div class="dr-head">
+    <h2>对局配置</h2>
+    <span class="lock" id="drLock">未开始 · 可编辑</span>
+    <!-- 对局中显示：<span class="lock on">🔒 对局中 · 只读（暂停后可换模型）</span> -->
+    <label class="x" for="cfg-toggle">✕</label>
+  </div>
+
+  <div class="dr-body">
+
+    <!-- 1 玩家数 -->
+    <div class="dr-sec">
+      <h3><i>1</i>玩家数量 <small>3–10 人</small></h3>
+      <div class="seg" id="segCount"></div>
+      <div class="preset" id="presetText">–</div>
+    </div>
+
+    <!-- 2 运行模式（原型没有，补上） -->
+    <div class="dr-sec">
+      <h3><i>2</i>运行模式 <small>离线模式用来试 UI，不消耗额度</small></h3>
+      <div class="seg" id="segMode">
+        <span data-mode="stub" class="on">离线模式</span>
+        <span data-mode="real">真实对局</span>
+      </div>
+      <div class="preset" id="modeHint">–</div>
+    </div>
+
+    <!-- 3 端点池 -->
+    <div class="dr-sec">
+      <h3><i>3</i>端点池 <small>先把「怎么连」填好，座位里再选用</small><span class="act" id="actTestAll">全部测试</span></h3>
+      <div id="epPool"></div>
+      <div class="add-ep" id="addEp">＋ 添加端点</div>
+      <div class="ep-form" id="epForm" style="display:none">
+        <label class="f full">名称<input class="in" id="fName" placeholder="例如：中转站 A"></label>
+        <label class="f full">base_url<input class="in" id="fUrl" placeholder="https://xxx/v1"></label>
+        <label class="f full">API Key
+          <div class="keyrow"><input class="in" type="password" id="fKey" placeholder="sk-..."><span class="eye" id="fEye">👁</span></div>
+        </label>
+        <label class="f">最大并发<input class="in" id="fConc" type="number" min="1" value="4"></label>
+        <div class="ep2-foot">
+          <span class="note" id="fNote">同一个 key 的并发额度是共享的，要摊开就得用不同的 key</span>
+          <button class="btn sm primary" id="fSave">保存并拉模型</button>
+          <button class="btn sm" id="fCancel">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4 座位分配 -->
+    <div class="dr-sec">
+      <h3><i>4</i>座位分配 <small>每个座位 = 一个端点 + 一个模型</small><span class="act" id="actReassign">按端点轮流分配</span></h3>
+      <div class="seat-tb" id="seatTable"></div>
+      <div class="warn" id="seatWarn" style="display:none"></div>
+      <div class="inj">🧩 提示词由后端注入：<b>Main Prompt</b>（通用）＋ <b>Character Prompt</b>（按角色动态）。此处只读，不可编辑。</div>
+    </div>
+
+    <!-- 5 代打与超时 -->
+    <div class="dr-sec">
+      <h3><i>5</i>代打与超时 <small>主模型失败后自动换备用模型，改完下一局生效</small></h3>
+      <label class="switch" style="align-self:flex-start">
+        <input type="checkbox" id="optFallback"><span>启用代打</span>
+      </label>
+      <div class="ep-form" style="display:grid;margin-top:10px">
+        <label class="f">每个模型最多试几次
+          <input class="in" id="cfgAttempts" type="number" min="1" max="10"></label>
+        <label class="f">单次请求超时（秒）
+          <input class="in" id="cfgTimeout" type="number" min="10" max="3600"></label>
+        <label class="f">整次调用总时限（秒，0=不限）
+          <input class="in" id="cfgDeadline" type="number" min="0" max="7200"></label>
+        <label class="f">超时立刻换代打
+          <select class="in" id="cfgSwitchTimeout">
+            <option value="1">是（挂起就别死磕）</option>
+            <option value="0">否（照常重试）</option>
+          </select></label>
+      </div>
+      <div class="preset" id="fallbackHint">–</div>
+      <!-- 每档代打 = [端点] → [模型]；模型框挂 datalist，可下拉可选、也能直接填
+           （推理接入点像 ep-xxxx 不在通道目录里，必须允许手填） -->
+      <div id="fbLists"></div>
+      <div id="fallbackTable"></div>
+    </div>
+  </div>
+
+  <div class="dr-foot">
+    <span class="tip">API Key 只发送到你的后端，<br>明文存于 config/endpoints.json（已 gitignore）。</span>
+    <label class="btn" for="cfg-toggle">关闭</label>
+    <button class="btn primary" id="btnStart">开始新对局</button>
+  </div>
+</aside>
+
+<!-- petite-vue：本地 vendor 的单文件库，离线可用（README 里写清了版本与来源） -->
+<script src="vendor/petite-vue.iife.js"></script>
+<script type="module" src="app/main.js"></script>
+</body>
+</html>

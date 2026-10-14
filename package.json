@@ -1,0 +1,12 @@
+{
+  "name": "ai-werewolf-frontend",
+  "private": true,
+  "type": "module",
+  "description": "前端开发依赖。运行时零依赖：petite-vue 已 vendored 到 static/vendor/petite-vue.iife.js；jsdom 只用于跑 tools/selftest_frontend.js。",
+  "scripts": {
+    "test": "node tools/selftest_frontend.js"
+  },
+  "devDependencies": {
+    "jsdom": "^30.1.2"
+  }
+}

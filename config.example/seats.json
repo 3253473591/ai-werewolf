@@ -1,0 +1,208 @@
+{
+  "_comment": "示例配置。复制为 config/seats.json。实测数据见 PROBE_FINDINGS.md，设计见 DESIGN.md §6。",
+  "_updated": "2026-10-06",
+  "_fallback_note": "代打已开启。主模型失败后按 fallback 列表依次尝试；切换会在行动日志里留一条上帝视角记录，summary 里有 calls_substituted 计数。策略旋钮在 game 段：max_attempts_per_model / switch_model_on_timeout / call_deadline_s。",
+  "fallback_enabled": true,
+  "relay": {
+    "base_url": "https://relay-a.example/v1",
+    "api_key_env": "RELAY_API_KEY",
+    "http_transport": "auto",
+    "proxy": "",
+    "_proxy_note": "留空即直连。某些出站链路会被按主机名在传输层 reset（TCP 连得上、TLS 握手被 RST，显式 80 也一样，同一 IP 换 SNI 就能通），这种只能在传输层挂代理。填代理地址即可，代码不做 no_proxy。也可以只设环境变量 HTTPS_PROXY 而不写这一项。"
+  },
+  "game": {
+    "player_count": 12,
+    "max_tokens_floor": 512,
+    "max_tokens_cap": 32768,
+    "_max_tokens_cap_note": "输出被 finish_reason=length 截断后，额度最多翻到这个值。从写死的 16384 提上来：有模型会把 16380 个 token 花在思维链上、正文只剩几个字符，撞 16384 就把半截 JSON 当成成功了。同一份 prompt 放到 32768 就正常写完（正文几百字符、解析零 issues）——差在几百个 token 而已。撞到上限仍是 length 时，现在会换下一个代打模型，不再把半截输出交出去。",
+    "request_timeout_s": 240,
+    "win_condition": "parity",
+    "_win_condition_note": "parity = 存活好人 <= 存活狼人则狼胜（默认，局短省 token）；side = 屠边（杀光所有神职或所有平民）",
+    "shuffle_roles": true,
+    "role_seed": null,
+    "_roles_note": "角色配置的唯一事实源是 aiwolf/seats.py 的 ROLE_SETS / ROLE_SETS_ALT，不在这里配。shuffle_roles=true 时按 role_seed 抽卡；role_seed 为 null 表示每局随机抽一次并记录种子（写死数字则每局一局，抽卡就名存实亡）。",
+    "max_attempts_per_model": 2,
+    "switch_model_on_timeout": true,
+    "call_deadline_s": 600,
+    "_fallback_policy_note": "每个模型最多试 max_attempts_per_model 次；超时(挂起)时立刻换下一个模型，429/5xx 照常退避重试；一次调用（含所有代打尝试）总时长不超过 call_deadline_s 秒。",
+    "sheriff_enabled": true,
+    "_sheriff_note": "警长上线（方案 A）：首日竞选 → 只有没上警的人投票 → 平票 PK 再投 → 再平票警徽流失。警长在放逐投票里算 1.5 票，每天决定从警左/警右开始发言（自己最后归票），出局时移交警徽或撕掉。关掉它就回到每局随机抽发言起始座的老行为。首日竞选会给每个存活座位各加一次调用。"
+  },
+  "concurrency": {
+    "global": 8,
+    "per_seat_overrides": {}
+  },
+  "_seats_note": "下面是 12 座阵容的**结构示例**。每座的 note 保留了当初的实测发现（缓存命中率、延迟、踩过的坑），这些是踩出来的，比配置本身有用。要把某座换回旧模型，改 model 即可。",
+  "seats": [
+    {
+      "no": 1,
+      "label": "DeepSeek",
+      "model": "deepseek-flash",
+      "fallback": [],
+      "temperature": 0.9,
+      "cache_style": "none",
+      "cache_verified": false,
+      "note": "实测：缓存命中 57.7%（全场最高）、中位 5.5s、最慢 8.8s，四座里最稳的一座。",
+      "endpoint": "ep1"
+    },
+    {
+      "no": 2,
+      "label": "GPT",
+      "model": "gpt-6.1-sol",
+      "fallback": [
+        "gpt-6-sol@ep2",
+        "tt-5.6-terra@ep2"
+      ],
+      "temperature": 0.9,
+      "cache_style": "auto",
+      "cache_verified": true,
+      "token_overhead_ratio": 1.36,
+      "note": "T1 7.5s；10K 前缀冷 49.4s → 热 17.9s。prompt_tokens 有约 1.36 倍虚高，成本按实测算。",
+      "endpoint": "ep2"
+    },
+    {
+      "no": 3,
+      "label": "Grok",
+      "model": "gk-4.6",
+      "fallback": [
+        "grok-4-7@ep2",
+        "gk-4.6@ep2"
+      ],
+      "temperature": 0.9,
+      "cache_style": "anthropic",
+      "cache_verified": false,
+      "token_overhead_ratio": 1.71,
+      "note": "T1 2.0s。网关不上报缓存，显式 cache_control 也不生效。prompt_tokens 约 1.71 倍虚高。",
+      "endpoint": "ep2"
+    },
+    {
+      "no": 4,
+      "label": "豆包",
+      "model": "doubao-seed-2-1-lite-260915",
+      "_swap_note": "从 grok-4-5 换成豆包（火山方舟）。原因：Grok 是九座里唯一的延迟瓶颈——一局 9 次调用累计 777s（占全场串行等待的 42%），中位 79.8s、最慢 162.3s，还白烧过一次 240s 超时。豆包实测：白天发言 17.2s、狼队频道 71.0s（带思维链），关掉思维链后狼队频道 2.7s；而且方舟不把思维链算进 max_tokens，不存在那种烧光额度的坑。旧的 grok 配置保留在 fallback 里。",
+      "fallback": [],
+      "temperature": 0.9,
+      "cache_style": "auto",
+      "cache_verified": false,
+      "extra_body": {
+        "thinking": {
+          "type": "disabled"
+        }
+      },
+      "note": "豆包（方舟推理接入点）。thinking=disabled 关掉思维链换延迟；需要长链路推理时把这个 extra_body 删掉即可。",
+      "endpoint": "ep3"
+    },
+    {
+      "no": 5,
+      "label": "千问",
+      "model": "qwen3.8-flash",
+      "fallback": [],
+      "temperature": 0.9,
+      "cache_style": "auto",
+      "cache_verified": true,
+      "note": "T1 4.3s。缓存 31104/31859（97.6%），14.2s → 12.2s。",
+      "endpoint": "ep5"
+    },
+    {
+      "no": 6,
+      "label": "Gemini",
+      "model": "gem-3.8-flash",
+      "fallback": [
+        "gemini-3.8-flash@ep2",
+        "gem-3.7-flash@ep2"
+      ],
+      "temperature": 0.9,
+      "cache_style": "auto",
+      "cache_verified": true,
+      "note": "T1 2.2s。缓存 35456/35546（99.7%），5.1s → 4.1s。",
+      "endpoint": "ep2"
+    },
+    {
+      "no": 7,
+      "label": "GLM",
+      "model": "glm-5.2",
+      "_swap_note": "原定 glm-5.3-flash。实测它会把自己的 3072 输出额度全花在思维链上（finish_reason=length、content 为空），要翻到 16384 才吐正文，单次发言 242 秒，一局没法玩。glm-5.2 同样 prompt 22.5 秒、思维链只有 3041 字、正常出正文。想换回改 model 即可。",
+      "fallback": [],
+      "temperature": 0.9,
+      "cache_style": "auto",
+      "cache_verified": true,
+      "note": "T1 2.0s。缓存 35328/35530（99.4%）。",
+      "endpoint": "ep4"
+    },
+    {
+      "no": 8,
+      "label": "MiniMax",
+      "model": "MiniMax-M3",
+      "fallback": [],
+      "temperature": 0.9,
+      "cache_style": "none",
+      "cache_verified": false,
+      "note": "T1 1.8s。后端是 ollama（system_fingerprint: fp_ollama）。cached_tokens 恒为 128，只命中后端固定模板，大前缀不缓存。",
+      "endpoint": "ep6"
+    },
+    {
+      "no": 9,
+      "label": "Kimi",
+      "model": "kimi-k2.6",
+      "_swap_note": "原定 kimi-k2.6。实测它会把自己的输出额度全花在思维链上（推理几千字、finish_reason=length、content 为空），单次发言 104~406 秒。kimi-k2.7-code 同样 prompt 8.6 秒正常出正文。想换回改 model 即可。",
+      "fallback": [],
+      "temperature": 0.9,
+      "cache_style": "auto",
+      "cache_verified": true,
+      "note": "T1 1.8s。⚑ 本通道所有 kimi 模型都锁定 temperature=1（见 temperature_locked_models，已改为 'kimi-' 前缀）。原先只在 k3 上登记是错的——12 座局 9 号座因此整局哑火（每一步都 400 invalid temperature）。",
+      "endpoint": "ep7"
+    },
+    {
+      "no": 10,
+      "label": "Claude",
+      "_placeholder": "★ 占位座位。9 个模型家族已全部用完，10 人局需要第 10 个座位，这里是同家族的第二款模型。想换直接改 model/label 即可（可选：qwen3-max / gemini-3.6-flash / claude-sonnet-5 / grok-3）。",
+      "model": "claude-fable-5-1",
+      "_fallback_note": "修正：原来两档代打全在同一个通道，和主模型同通道。10 座局实测该通道整条连接超时（三个模型都是 connect timeout），10 号座连着哑两个回合。第一档改成跨通道的豆包接入点，和 2/3/6/7/9 号一致。",
+      "fallback": [
+        "sn-5-5@ep2",
+        "claude-sonnet-5@ep2"
+      ],
+      "temperature": 0.9,
+      "cache_style": "auto",
+      "cache_verified": false,
+      "note": "T1 12.1s，GPT 系里最慢。仅用于凑够 10 座。",
+      "endpoint": "ep2"
+    },
+    {
+      "no": 11,
+      "label": "阶跃星辰",
+      "model": "step-5-preview",
+      "fallback": [],
+      "temperature": 0.9,
+      "cache_style": "auto",
+      "cache_verified": false,
+      "note": "Step 3.7 Flash。256K 上下文——按实测预算模型，12 座 6 天最大 prompt 约 3 万 tokens，占 256K 的 11%，够用且富余很大。",
+      "endpoint": "ep5"
+    },
+    {
+      "no": 12,
+      "label": "小米",
+      "model": "mimo-v2.6-flash",
+      "fallback": [
+        "mimo-v2.6-pro@ep5"
+      ],
+      "_fallback_note": "★ 修正：原来写的是同通道的型号——等于没有代打：那条通道要是整条挂掉（reset / 挂起），主模型和第一档代打一起死，12 号座直接丢回合，正是 _fallback_policy 明令禁止的写法。改成跨通道的同族型号。",
+      "temperature": 0.9,
+      "cache_style": "auto",
+      "cache_verified": false,
+      "note": "小米 MiMo。1M 上下文。12 座 6 天实测预算约 3 万 tokens，到不了它的零头；留着当长局保险。",
+      "endpoint": "ep6"
+    }
+  ],
+  "temperature_locked_models": {
+    "kimi-": 1
+  },
+  "_temperature_locked_models_note": "键按 startswith 前缀匹配（见 aiwolf/relay.py 的 _temperature()）。实测：kimi-k2.6 / kimi-k2.7-code / kimi-k3 三个模型传 0.9 会全部 HTTP 400 'invalid temperature: only 1 is allowed for this model'，传 1 才 200。所以约束在**整个 kimi 家族**，不是只有 k3——原来只登记 k3，12 座局 9 号座整局哑火。写 'kimi-' 覆盖全族，将来上 kimi-k4 也不必再改。",
+  "prompt": {
+    "identity_in_tail": true,
+    "own_speech_role": "user",
+    "cache_breakpoint_after_public": true,
+    "warmup_first_seat_serial": true
+  },
+  "_fallback_policy": "代打链的第一档一律放在**另一条通道**上，同族备选排第二。原因：通道级故障（连接 reset / 整条挂起）时代打同通道的模型等于没代打——实测三档测试里一条通道整条 reset，两个座位的三个模型全在它上面，全军覆没；另一座第一档是跨通道的豆包，活下来了。写法：模型@通道。"
+}

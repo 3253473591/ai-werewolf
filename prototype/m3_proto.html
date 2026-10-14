@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-phase="night">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>狼人杀 · 对局回放（M3 原型）</title>
+<style>
+:root{
+  --serif:"Noto Serif SC","Source Han Serif SC","Songti SC","STSong","SimSun",serif;
+  --sans:"Microsoft YaHei UI","PingFang SC","Segoe UI",system-ui,sans-serif;
+  --mono:"Cascadia Mono",Consolas,monospace;
+  /* 阵营色：只用于上帝视角的身份徽章 */
+  --wolf:oklch(.70 .17 25); --seer:oklch(.76 .12 300); --witch:oklch(.80 .13 160);
+  --hunter:oklch(.80 .13 60); --villager:oklch(.74 .03 260);
+  --gold:#e8b85a;
+}
+:root[data-phase=night]{--bg0:#060814;--bg1:#0c1124;--accent:#a9bcff;--surf:rgba(150,170,255,.065);--surf2:rgba(150,170,255,.11);
+  --line:rgba(160,180,255,.15);--text:#e9ebf7;--dim:#a6adcb;--ring:#0c1124}
+:root[data-phase=day]{--bg0:#120e0c;--bg1:#1d1612;--accent:#f1c27d;--surf:rgba(255,220,170,.06);--surf2:rgba(255,220,170,.10);
+  --line:rgba(255,215,160,.15);--text:#f5ede5;--dim:#bcae9f;--ring:#1d1612}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg0);color:var(--text);font:14px/1.6 var(--sans);overflow:hidden}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px}
+*{scrollbar-color:var(--line) transparent}
+
+/* 天空：两层叠放，用 opacity 切换（渐变本身不能过渡） */
+.sky{position:fixed;inset:0;opacity:0;transition:opacity .7s ease;pointer-events:none;z-index:0}
+.sky.night{background:radial-gradient(900px 480px at 50% -8%,rgba(120,150,255,.20),transparent 70%),
+  radial-gradient(500px 300px at 90% 100%,rgba(90,60,160,.16),transparent 70%),linear-gradient(#0c1124,#060814)}
+.sky.day{background:radial-gradient(900px 480px at 50% -8%,rgba(255,180,95,.19),transparent 70%),
+  radial-gradient(500px 300px at 10% 100%,rgba(160,70,50,.13),transparent 70%),linear-gradient(#1d1612,#120e0c)}
+:root[data-phase=night] .sky.night,:root[data-phase=day] .sky.day{opacity:1}
+
+.app{position:relative;z-index:1;height:100vh;display:grid;grid-template-rows:58px minmax(0,1fr) 96px}
+
+/* ===== 顶栏：只留三件事 ===== */
+.top{display:flex;align-items:center;gap:18px;padding:0 22px;border-bottom:1px solid var(--line);
+  background:linear-gradient(var(--surf),transparent)}
+.brand{font:700 16px var(--serif);letter-spacing:.18em;color:var(--dim);white-space:nowrap}
+.pill{display:flex;align-items:center;gap:10px;padding:6px 16px 6px 10px;border-radius:999px;
+  background:var(--surf2);border:1px solid var(--line)}
+.pill svg{width:22px;height:22px;color:var(--accent)}
+.pill b{font:700 15px var(--serif);letter-spacing:.06em}
+.pill span{color:var(--dim);font-size:13px}
+.sp{flex:1}
+.seg{display:flex;padding:3px;border-radius:999px;background:var(--surf);border:1px solid var(--line)}
+.seg button{padding:4px 16px;border-radius:999px;color:var(--dim);font-size:13px}
+.seg button.on{background:var(--accent);color:#0b0d1a;font-weight:700}
+.replay{font-size:12px;color:var(--dim);padding:3px 10px;border:1px dashed var(--line);border-radius:999px;white-space:nowrap}
+.menu{width:34px;height:34px;border-radius:50%;border:1px solid var(--line);font-size:18px;line-height:1;color:var(--dim)}
+
+/* ===== 主体：圆桌 | 大桌 | 小桌 ===== */
+.main{display:grid;grid-template-columns:420px minmax(0,1fr);min-height:0}
+.stage{padding:18px 20px 10px;display:flex;flex-direction:column;align-items:center;gap:12px;border-right:1px solid var(--line);min-height:0;overflow:hidden}
+.table{position:relative;width:100%;max-width:380px;aspect-ratio:1;flex:none}
+.ring{position:absolute;inset:7%;border-radius:50%;
+  background:radial-gradient(circle at 50% 38%,var(--surf2),var(--surf) 60%,transparent 100%);
+  border:1px solid var(--line);box-shadow:inset 0 0 60px rgba(0,0,0,.35),0 0 0 8px var(--surf)}
+.ring::after{content:"";position:absolute;inset:11%;border-radius:50%;border:1px dashed var(--line);opacity:.7}
+#links{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+#links path{fill:none;stroke-width:.9;stroke-linecap:round;stroke-dasharray:140;stroke-dashoffset:140;animation:draw .7s ease forwards,fade 1.6s ease .7s forwards}
+@keyframes draw{to{stroke-dashoffset:0}}@keyframes fade{to{opacity:.0}}
+.hub{position:absolute;left:50%;top:50%;width:46%;transform:translate(-50%,-50%);text-align:center;display:flex;flex-direction:column;align-items:center;gap:2px}
+.hub svg{width:34px;height:34px;color:var(--accent);margin-bottom:2px}
+.hub .d{font:700 20px var(--serif);letter-spacing:.1em}
+.hub .p{font-size:12px;color:var(--dim);letter-spacing:.12em}
+.hub .q{margin-top:8px;font:13px/1.6 var(--serif);color:var(--text);opacity:.92;max-height:4.8em;overflow:hidden;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
+.hub .q i{display:block;font-style:normal;font:600 11px var(--sans);color:var(--accent);margin-bottom:1px}
+
+.seat{position:absolute;width:76px;margin:-30px 0 0 -38px;display:flex;flex-direction:column;align-items:center;gap:3px;z-index:2;
+  left:calc(50% + 39% * cos(var(--a)));top:calc(50% + 39% * sin(var(--a)))}
+.medal{position:relative;width:var(--m,52px);height:var(--m,52px);border-radius:50%;display:grid;place-items:center;flex:none;
+  font:700 calc(var(--m,52px) * .36)/1 var(--serif);color:#0b0d1a;letter-spacing:-.02em;
+  background:radial-gradient(circle at 30% 24%,color-mix(in oklab,var(--c) 62%,white),var(--c) 52%,color-mix(in oklab,var(--c) 62%,black));
+  box-shadow:0 0 0 2px var(--ring),0 0 0 3px color-mix(in oklab,var(--c) 55%,transparent),0 6px 14px rgba(0,0,0,.45)}
+.medal .no{position:absolute;right:-3px;bottom:-3px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;
+  background:var(--ring);color:var(--text);font:700 11px/18px var(--mono);text-align:center;border:1px solid var(--line)}
+.seat .nm{font-size:12.5px;font-weight:600;max-width:76px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.seat .rl{font-size:11px;font-weight:700;margin-top:-2px}
+.role-wolf{color:var(--wolf)}.role-seer{color:var(--seer)}.role-witch{color:var(--witch)}.role-hunter{color:var(--hunter)}.role-villager{color:var(--villager)}
+.seat.dead .medal{filter:grayscale(1) brightness(.55)}
+.seat.dead .nm{color:var(--dim)}
+.seat.dead .nm{text-decoration:line-through;text-decoration-color:var(--dim)}
+.seat.dead .cause{position:absolute;left:-4px;top:-4px}
+.cause{min-width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font:700 11px var(--sans);
+  color:#fff;background:#6b7088;border:1px solid var(--ring);z-index:3}
+.cause.wolf{background:oklch(.55 .19 25)}.cause.poison{background:oklch(.52 .15 150)}.cause.vote{background:oklch(.55 .12 80);color:#1a1205}
+.cause.hunter{background:oklch(.58 .14 55)}.cause.night{background:#4a4f78}
+.votes{position:absolute;right:-6px;top:-6px;min-width:22px;height:22px;border-radius:11px;padding:0 6px;display:grid;place-items:center;
+  background:var(--gold);color:#201505;font:800 12px var(--mono);border:2px solid var(--ring);z-index:3}
+.seat.speaking .medal{animation:pulse 1.6s ease-in-out infinite;transform:scale(1.1)}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 2px var(--ring),0 0 0 3px var(--c),0 0 18px color-mix(in oklab,var(--c) 60%,transparent)}
+  50%{box-shadow:0 0 0 2px var(--ring),0 0 0 5px var(--c),0 0 30px color-mix(in oklab,var(--c) 85%,transparent)}}
+.tstat{display:flex;gap:18px;font-size:13px;color:var(--dim);margin-top:16px}
+.tx p+p{margin-top:.55em}
+.tstat b{color:var(--text);font-family:var(--mono)}
+
+/* ===== 大桌 ===== */
+.feedwrap{overflow-y:auto;min-width:0}
+.feed{max-width:760px;margin:0 auto;padding:6px 28px 60px}
+.div{display:flex;align-items:center;gap:16px;margin:26px 0 12px;font:700 14px var(--serif);letter-spacing:.3em;color:var(--accent)}
+.div::before,.div::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--line),transparent)}
+.beat{margin:12px auto;text-align:center;font-size:13px;color:var(--dim);letter-spacing:.04em}
+.beat.night{color:var(--accent);font-family:var(--serif);letter-spacing:.3em}
+.note{display:flex;align-items:center;gap:8px;justify-content:center;margin:9px auto;padding:5px 14px;max-width:620px;
+  border-radius:9px;background:var(--surf);border:1px dashed var(--line);font-size:12.5px;color:var(--dim);text-align:center}
+.note .medal{font-size:11px;color:#0b0d1a}
+.order{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:4px;margin:14px 0;color:var(--dim);font-size:12px}
+.order .medal{--m:26px}.order .medal .no{display:none}.order em{font-style:normal;opacity:.5}
+
+.card{display:flex;gap:14px;margin:16px 0;align-items:flex-start}
+.card .medal{--m:44px}
+.card .bd{flex:1;min-width:0}
+.card .hd{display:flex;align-items:baseline;gap:10px;margin-bottom:5px}
+.card .hd b{font-size:14px;color:var(--c)}
+.tag{font-size:12px;padding:0 8px;border-radius:999px;border:1px solid var(--line);color:var(--dim)}
+.card .hd .meta{margin-left:auto;font:12px var(--mono);color:var(--dim)}
+.card .tx{background:var(--surf);border:1px solid var(--line);border-radius:4px 16px 16px 16px;padding:12px 16px;
+  font:15.5px/1.9 var(--serif);white-space:pre-wrap}
+.pill-role{font-size:12px;font-weight:700;padding:0 8px;border-radius:999px;border:1px solid currentColor}
+
+.tx.clampN{display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer;
+  -webkit-mask-image:linear-gradient(#000 78%,transparent)}
+/* 投票卡：理由 + 投给 X 合并为一张 */
+.vote .tx{padding:9px 14px;font-size:14px;line-height:1.75;cursor:pointer}
+.vote .tx.clamp{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.vote .to{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--gold);font-weight:700}
+.vote .to .medal{--m:20px}.vote .to .medal .no{display:none}
+.lg{font-style:normal;font-size:11px;color:var(--dim);border:1px solid var(--line);border-radius:6px;padding:0 5px;margin-left:5px}
+.vote .hd .to{margin-left:auto}
+
+/* 票型汇总 */
+.tally{margin:22px 0;padding:18px 20px;border-radius:18px;background:linear-gradient(var(--surf2),var(--surf));border:1px solid var(--line)}
+.tally h4{font:700 20px var(--serif);text-align:center;letter-spacing:.06em;margin-bottom:4px}
+.tally h4 em{font-style:normal;color:var(--gold)}
+.tally .sub{text-align:center;color:var(--dim);font-size:12.5px;margin-bottom:14px}
+.trow{display:grid;grid-template-columns:34px 116px 1fr;gap:10px;align-items:center;padding:5px 0}
+.trow .n{white-space:nowrap}
+.trow .medal{--m:30px}.trow .medal .no{display:none}
+.trow .n{font-size:13px;font-weight:600}
+.bar{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.bar .dot{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font:700 11px var(--mono);color:#0b0d1a;
+  background:var(--c)}
+.trow.out .n{color:var(--gold)}
+
+/* 死亡 / 平安夜：整局叙事高点 */
+.fall{margin:26px 0;padding:24px 20px 20px;text-align:center;border-radius:20px;border:1px solid var(--line);
+  background:radial-gradient(420px 160px at 50% 0%,color-mix(in oklab,var(--accent) 14%,transparent),transparent 70%),var(--surf)}
+.fall .row{display:flex;justify-content:center;gap:22px;margin-bottom:12px}
+.fall .it{display:flex;flex-direction:column;align-items:center;gap:6px}
+.fall .it .medal{--m:62px;filter:grayscale(1) brightness(.6)}
+.fall .it .cause{position:absolute;left:-6px;top:-6px;width:26px;height:26px;font-size:13px;filter:none}
+.fall .it .why{font-size:12.5px;color:var(--dim)}
+.fall h4{font:700 22px var(--serif);letter-spacing:.08em}
+.fall p{color:var(--dim);font-size:13px;margin-top:4px}
+.fall.calm h4{color:var(--accent)}
+
+/* ===== 小桌（上帝视角） ===== */
+.wmsg{display:flex;gap:10px;margin:10px 0}.wmsg .medal{--m:30px}.wmsg .medal .no{display:none}
+.wmsg .t{font:13.5px/1.75 var(--serif);flex:1;min-width:0;background:rgba(0,0,0,.22);border-radius:4px 12px 12px 12px;padding:6px 11px}
+.chip{margin:8px 0;padding:7px 12px;border-radius:10px;font-size:13px;text-align:center;background:color-mix(in oklab,var(--wolf) 18%,transparent);color:oklch(.85 .08 25)}
+.pv{margin:8px 0;font-size:13px;display:flex;gap:8px;align-items:baseline}
+.pv i{font-style:normal;font-weight:700;font-size:12px}
+.empty{color:var(--dim);font-size:13px;padding:14px 0;text-align:center}
+
+/* ===== 夜间块：上帝视角下并入大桌，按夜折叠；当前夜自动展开 ===== */
+.night{margin:16px 0;border:1px solid color-mix(in oklab,var(--wolf) 32%,var(--line));border-radius:16px;
+  background:color-mix(in oklab,var(--wolf) 6%,var(--surf));overflow:hidden}
+.nh{width:100%;display:flex;align-items:center;gap:12px;padding:10px 16px;text-align:left}
+.nh span{font:700 14px var(--serif);letter-spacing:.1em;color:var(--wolf);white-space:nowrap}
+.nh b{font-size:11px;font-weight:600;padding:0 7px;border-radius:999px;border:1px solid currentColor;color:var(--dim);white-space:nowrap}
+.nh em{font-style:normal;flex:1;min-width:0;font-size:12.5px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nh i{font-style:normal;font-size:12px;color:var(--dim);white-space:nowrap}
+.nb{padding:2px 16px 12px;border-top:1px solid color-mix(in oklab,var(--wolf) 22%,var(--line))}
+.night:not(.open) .nb{display:none}
+/* 猎人报幕：白天事件、公开可见，所以不用夜间那种红框，改用日间强调色 */
+.hblock{margin:16px 0;padding:2px 4px}
+.rb{display:flex;align-items:center;gap:12px;margin:12px 0 8px;font:12.5px var(--serif);color:var(--dim);letter-spacing:.16em;white-space:nowrap}
+.rb::before,.rb::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,transparent,color-mix(in oklab,var(--wolf) 40%,var(--line)),transparent)}
+.hblock .rb::before,.hblock .rb::after{background:linear-gradient(90deg,transparent,color-mix(in oklab,var(--accent) 45%,var(--line)),transparent)}
+.hunt{display:flex;align-items:center;gap:10px;margin:8px 2px;padding:9px 14px;border-radius:12px;
+  background:var(--surf);border:1px solid var(--line);font-size:14px}
+.hunt .medal{--m:30px}.hunt .medal .no{display:none}
+.hunt b{color:var(--c)}
+.hunt.shoot{border-color:color-mix(in oklab,var(--accent) 55%,var(--line));
+  background:linear-gradient(90deg,color-mix(in oklab,var(--accent) 16%,var(--surf)),var(--surf))}
+.hunt .arw{color:var(--accent);font-weight:700}
+.wmsg{display:flex;gap:10px;margin:10px 0}.wmsg .medal{--m:30px}.wmsg .medal .no{display:none}
+.wmsg .t b{display:block;font-size:12.5px;color:var(--c);margin-bottom:1px}
+.chip{margin:8px 0;padding:7px 12px;border-radius:10px;font-size:13px;text-align:center;background:color-mix(in oklab,var(--wolf) 18%,transparent);color:oklch(.85 .08 25)}
+.pv{margin:8px 0;font-size:13px;display:flex;gap:8px;align-items:baseline}
+.pv i{font-style:normal;font-weight:700;font-size:12px}
+/* ===== 时间轴 ===== */
+.tl{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:20px;align-items:center;padding:0 22px;border-top:1px solid var(--line);
+  background:linear-gradient(transparent,var(--surf))}
+.ctl{display:flex;gap:6px;align-items:center}
+.ctl button{width:36px;height:36px;border-radius:50%;border:1px solid var(--line);color:var(--text);font-size:13px;background:var(--surf)}
+.ctl button.play{width:46px;height:46px;background:var(--accent);color:#0b0d1a;border:0;font-size:16px}
+.ctl .jump{width:auto;padding:0 12px;border-radius:999px;font-size:12px;color:var(--dim)}
+.trackw{position:relative;height:66px}
+.track{position:absolute;left:0;right:0;top:0;height:34px;border-radius:8px;overflow:hidden;background:var(--surf);border:1px solid var(--line);cursor:pointer;touch-action:none}
+.band{position:absolute;top:0;bottom:0;background:rgba(110,130,230,.17)}
+.tick{position:absolute;top:4px;bottom:4px;width:2px;margin-left:-1px;border-radius:2px;pointer-events:none}
+.tick.death{background:oklch(.68 .18 25)}.tick.vote{background:var(--gold)}
+.fill{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,transparent,color-mix(in oklab,var(--accent) 22%,transparent))}
+.head{position:absolute;top:-4px;bottom:-4px;width:3px;margin-left:-1.5px;background:var(--accent);border-radius:2px;box-shadow:0 0 10px var(--accent)}
+.curve{position:absolute;left:0;right:0;top:38px;height:26px;width:100%}
+.lbl{font:12px var(--mono);color:var(--dim);white-space:nowrap;text-align:right}
+.lbl b{display:block;font:700 14px var(--serif);color:var(--text);letter-spacing:.06em}
+.legend{display:flex;gap:10px;font-size:11.5px;color:var(--dim);justify-content:flex-end;margin-top:2px}
+.legend i{display:inline-block;width:10px;height:3px;border-radius:2px;margin-right:4px;vertical-align:middle}
+
+/* ===== 手机：座位条 + feed + 底部时间轴 ===== */
+.strip{display:none}
+@media (max-width:900px){
+  body{overflow:hidden}
+  .app{grid-template-rows:52px minmax(0,1fr) 78px}
+  .brand,.replay,.menu~*{display:none}
+  .top{padding:0 12px;gap:10px}.pill{padding:4px 12px 4px 8px}
+  .app{grid-template-columns:minmax(0,1fr)}
+  .main,[data-view=spec] .main{grid-template-columns:minmax(0,1fr)}
+  .top{overflow:hidden}
+  .seg button{padding:4px 11px}
+  .strip{background:var(--bg1)}
+  .stage{display:none!important}
+  .strip{display:flex;gap:12px;overflow-x:auto;padding:10px 14px;position:sticky;top:0;z-index:5;
+    background:linear-gradient(var(--bg1) 70%,transparent);border-bottom:1px solid var(--line)}
+  .strip .seat{position:static;margin:0;flex:none;width:58px}
+  .strip .medal{--m:42px}
+  .strip .seat .nm{max-width:58px;font-size:11.5px}
+  .feed{padding:0 14px 40px}
+  .card .medal{--m:36px}.card{gap:10px}.card .tx{font-size:15px;padding:10px 12px}
+  .tl{grid-template-columns:auto minmax(0,1fr);gap:10px;padding:0 12px}
+  .lbl,.curve,.ctl .jump{display:none}
+  .trackw{height:36px}.ctl button{width:34px;height:34px}
+  .fall .row{gap:14px}.fall .it .medal{--m:50px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="sky night"></div><div class="sky day"></div>
+<div class="app">
+  <header class="top">
+    <div class="brand">狼人杀 · 对局回放</div>
+    <div class="pill" id="pill"></div>
+    <div class="sp"></div>
+    <span class="replay" id="rp">回放中 · 20261005_145320_9seat_web</span>
+    <div class="seg" id="seg"><button data-v="spec" class="on">观众</button><button data-v="god">上帝</button></div>
+    <button class="menu" aria-label="更多">⋯</button>
+  </header>
+
+  <main class="main">
+    <section class="stage">
+      <div class="table" id="table">
+        <div class="ring"></div>
+        <svg id="links" viewBox="0 0 100 100"></svg>
+        <div class="hub" id="hub"></div>
+        <div id="seats"></div>
+      </div>
+      <div class="tstat" id="tstat"></div>
+    </section>
+    <section class="feedwrap" id="fw">
+      <div class="strip" id="strip"></div>
+      <div class="feed" id="feed"></div>
+    </section>
+  </main>
+
+  <footer class="tl">
+    <div class="ctl">
+      <button id="bPrev" aria-label="上一条">◀</button>
+      <button id="bPlay" class="play" aria-label="播放">▶</button>
+      <button id="bNext" aria-label="下一条">▶</button>
+      <button class="jump" id="bVote">下次投票 ⏭</button>
+      <button class="jump" id="bDeath">下次死亡 ⏭</button>
+    </div>
+    <div class="trackw">
+      <div class="track" id="track"><div class="fill" id="fill"></div><div id="marks"></div><div class="head" id="head"></div></div>
+      <svg class="curve" id="curve" viewBox="0 0 100 26" preserveAspectRatio="none"></svg>
+    </div>
+    <div class="lbl" id="lbl"></div>
+  </footer>
+</div>
+
+<script>
+const EV = [{"seq":0,"day":1,"phase":"NIGHT_START","channel":"public","kind":"system","actor":null,"to_seat":null,"text":"天黑请闭眼","data":{}},{"seq":1,"day":1,"phase":"NIGHT_WOLF_CHAT","channel":"wolf","kind":"speech","actor":1,"to_seat":null,"text":"首夜没人有信息，建议刀6号——中段座位，既不像新手也不像焦点，天亮后好人不容易立刻从死者身份反推我们。另外我建议9号明天悍跳预言家，我给9号打配合，3号先深水观察。如果你们更想刀7号或8号也能商量，但刀口最好统一，别分票。","data":{}},{"seq":2,"day":1,"phase":"NIGHT_WOLF_CHAT","channel":"wolf","kind":"speech","actor":3,"to_seat":null,"text":"同意刀6号，目标统一，9号悍跳我配合，我先深水。","data":{}},{"seq":3,"day":1,"phase":"NIGHT_WOLF_CHAT","channel":"wolf","kind":"speech","actor":9,"to_seat":null,"text":"同意刀6号，我天亮悍跳预言家给1号发金水，1号帮我打配合、3号先深水，白天我们把焦点引向中后置位。","data":{}},{"seq":4,"day":1,"phase":"NIGHT_WOLF","channel":"wolf","kind":"action","actor":1,"to_seat":null,"text":"主张击杀 6号","data":{"action":"kill","target":6}},{"seq":5,"day":1,"phase":"NIGHT_WOLF","channel":"wolf","kind":"action","actor":3,"to_seat":null,"text":"主张击杀 6号","data":{"action":"kill","target":6}},{"seq":6,"day":1,"phase":"NIGHT_WOLF","channel":"wolf","kind":"action","actor":9,"to_seat":null,"text":"主张击杀 6号","data":{"action":"kill","target":6}},{"seq":7,"day":1,"phase":"NIGHT_WOLF","channel":"wolf","kind":"resolution","actor":null,"to_seat":null,"text":"狼队决议：今晚击杀 6号（3/3 票，多数通过，提议者 1号、3号、9号）","data":{"target":6,"votes":3,"total":3,"tied":false}},{"seq":8,"day":1,"phase":"NIGHT_WITCH","channel":"private","kind":"action","actor":4,"to_seat":4,"text":"你使用了救药","data":{"action":"save","target":6}},{"seq":9,"day":1,"phase":"NIGHT_SEER","channel":"private","kind":"resolution","actor":8,"to_seat":8,"text":"你查验了 7号 GLM，结果是好人","data":{"target":7,"is_wolf":false}},{"seq":10,"day":1,"phase":"NIGHT_RESOLVE","channel":"public","kind":"resolution","actor":null,"to_seat":null,"text":"6号 昨晚被救下了","data":{}},{"seq":11,"day":1,"phase":"DAY_ANNOUNCE","channel":"public","kind":"resolution","actor":null,"to_seat":null,"text":"昨晚是平安夜","data":{}},{"seq":12,"day":1,"phase":"DAY_SPEECH","channel":"public","kind":"system","actor":null,"to_seat":null,"text":"本轮发言顺序：3号 → 4号 → 5号 → 6号 → 7号 → 8号 → 9号 → 1号 → 2号","data":{}},{"seq":13,"day":1,"phase":"DAY_SPEECH","channel":"public","kind":"speech","actor":3,"to_seat":null,"text":"平安夜，信息量为零，第一天发言很难定人。我倾向于先听听大家的分析，看看有没有人冒出什么有价值的线索，再做判断。目前没有任何死者可以参考，贸然站边风险太大，我先观察后续发言。","data":{}},{"seq":14,"day":1,"phase":"DAY_SPEECH","channel":"public","kind":"speech","actor":4,"to_seat":null,"text":"3号说的没错，平安夜确实意味着没有死者可以参考，不过我想补充一点——平安夜要么是女巫救了人，要么是狼人空刀，前者的可能性肯定更大。我目前就是个普通好人，没有任何夜晚信息，接下来主要听听后面会不会有人出来跳预言家报验人，先以预言家的发言作为第一个判断基准，其他人暂时先观望，没有明显的站边倾向。","data":{}},{"seq":15,"day":1,"phase":"DAY_SPEECH","channel":"public","kind":"speech","actor":5,"to_seat":null,"text":"3号和4号的发言都比较保守，4号提到女巫救人是基本常识。我5号底牌是一张好人牌，而且是一张不怕被抗推、有自证能力的好人牌。今天平安夜，预言家大概率会起跳，我希望后面的预言家能报出清晰的验人和警徽流。如果有对跳，我会严格根据你们的发言逻辑、视野和心路历程来站边。前置位目前没听到太多有效信息，谁要是敢在后续发言里乱带节奏，我会让他付出代价。我先过了，听后续发言。","data":{}},{"seq":16,"day":1,"phase":"DAY_SPEECH","channel":"public","kind":"speech","actor":6,"to_seat":null,"text":"我是6号，底牌是一张好人牌。前置位3号和4号基本是常规试探发言，没有输出太多营养，4号点出大概率女巫开药是客观规律；5号发言攻击性较强，隐约表明自己是有自证能力的神职牌，可以先放一放，待会看有没有人质疑他。现在还没人起跳预言家，后置位7、8、9、1、2号牌里必有真假预言家起跳，我重点听预言家的验人、警徽流和心路历程再决定站边，我先过了。","data":{}},{"seq":17,"day":1,"phase":"DAY_SPEECH","channel":"public","kind":"speech","actor":7,"to_seat":null,"text":"我是7号，一张村民牌。平安夜大概率是女巫开药救了人，这个大家都清楚。前面3号、4号比较保守，没什么问题；5号说自己是有自证能力的好人，这个先记着，如果是真的神职，后面自然会验证，但如果后续有人对跳这个位置，那5号的发言就有参考价值了。6号的分析比较客观，暂时没看出什么问题。现在关键还是等预言家起跳，后置位8、9、1、2里如果有人跳预言家，我会重点听三个东西：第一验人结果，第二警徽流，第三心路历程。如果出现对跳，我会比较双方的视野和逻辑自洽性来站边。我先把态度摆在这：我是村民，没有夜间信息，今天一定会跟真预言家走，谁逻辑硬我站谁。过。","data":{}},{"seq":18,"day":1,"phase":"DAY_SPEECH","channel":"public","kind":"speech","actor":8,"to_seat":null,"text":"我是8号，底牌预言家，请全场好人听清楚我的发言。\n\n第一，验人结果：昨晚我查验的是7号，7号是金水，好人牌，请全场记住。\n\n第二，心路历程：昨晚天黑前我决定先验7号，理由是7号在某些配置中容易被狼队安排在浅水位做冲锋或垫飞位，先验7号能给我一个清晰的第一手信息。结果是金水，7号是可信的好人。\n\n第三，对前置位的评价：3号、4号发言保守但逻辑没毛病，属于标准村民发言，暂时不纳入重点怀疑；6号发言客观，昨晚被刀被救，今天心态平稳，没有明显破绽；5号说自己是\u0027有自证能力的好人牌\u0027，这个描述很模糊，自证能力可以是猎人、女巫、甚至守卫，但5号没有明说身份，我先把这条记下来，作为重点观察对象。7号是金水，不多说。\n\n第四，警徽流：我今晚的查验目标是5号。理由是5号的发言最不像普通村民——普通村民不会主动强调自己有自证能力，狼人也不会无缘无故这么说。如果5号是查杀，我直接报；如果5号也是金水，那后面1号、2号我重点查一个。\n\n第五，请后置位9号、1号、2号注意：如果你们中间有人跳预言家跟我对跳，我请所有好人严格对比我们的验人结果、心路历程、警徽流和逻辑自洽性。我是真预言家，我的发言链条是完整的，悍跳狼的验人大概率是编的。\n\n最后，平安夜说明女巫已经用药救了6号，女巫的解药已经交出去了，如果今晚狼人再刀6号，6号就没保护了，请守卫注意。今晚请好人阵营保护我，我一定会尽全力带大家赢。\n\n发言完毕，预言家8号，请大家站边。","data":{}},{"seq":19,"day":1,"phase":"DAY_SPEECH","channel":"public","kind":"speech","actor":9,"to_seat":null,"text":"我是9号，底牌预言家。昨晚我查验的是1号，1号是金水，好人牌。首夜没有任何前置位信息，我选择验1号，是因为他在今天发言顺序中处于我之后、全场偏后位置，后置位容易藏深水狼或关键神职，先把这个位置定下来对我后续布局很重要。现在8号也跳了预言家，我先不急着给他定性，但我必须指出一个问题：8号验的是7号金水，而7号正好在发言顺序里紧邻8号之前，7号的发言又是一张标准村民牌，8号这个金水发得未免太顺手、太像拉票，心路历程不够扎实。我9号的验人是1号，一个后置位玩家，这个位置没有明显特征，我没有选择去验一个看起来就像好人的玩家来博取支持。我的警徽流是今晚验2号，2号是最后发言位，也是深水重灾区，如果2号金水，我明天再重点看5号这种自称有自证能力的玩家；如果2号查杀，我会直接带队推他。后置位1号是我的金水，2号是我的查验目标，请全场好人把视野打开，不要只盯着8号的单方面发言。今天我会和8号正面刚逻辑，谁真谁假，大家看验人、看警徽流、看心路历程。我9号是真预言家，请好人站边我，过。","data":{}},{"seq":20,"day":1,"phase":"DAY_SPEECH","channel":"public","kind":"speech","actor":1,"to_seat":null,"text":"我是1号。9号给我发了金水，我先表个态：我是好人牌，接到这个金水我不心虚，但也正因为我是金水，我不能因为9号保了我我就无脑贴上去，那样对不起好人线。所以我把对跳的逻辑给大家摆清楚。\n\n现在8号和9号都跳了预言家，都是金水开局，那就要比心路历程和视角。我倾向站9号，理由有三条。\n\n第一，验人位置。9号验的是我1号——一个后置、前置发言毫无特征的位置，这个选择信息价值最大，符合真预言家首夜想吃硬信息、想锁后置深水位的思路。8号验的是7号，7号紧邻8号之前，而且7号那张发言就是一张标准村民牌，谁都知道7号大概率是好人。8号给7号发金水，等于用一次宝贵的验人换了一个\u0027本来就像好人\u0027的认可，这个金水不带信息量，更像是在给自己拉一个安全的助攻位。\n\n第二，心路历程。8号说验7号是因为\u00277号容易被狼队安排在浅水位做冲锋或垫飞位\u0027——这句话套在在场任何一个人身上都成立，它不是一个具体判断，是个万能理由。9号验1号给的理由是\u0027后置位容易藏深水狼或关键神职\u0027，指向明确、可验证。\n\n第三，动作幅度。8号在发言里主动规划女巫、守卫的用药，还催着\u0027今晚请好人保护我\u0027。真预言家会争取保护，但不会这么急着替全场做安排，这个姿态太满了。\n\n再回应前置位：5号自称\u0027有自证能力\u0027，这个身份先挂着，真神后面自然验得了；6号昨晚被刀被救、心态平稳，暂时先过；3号、4号、7号都是常规村民线，没什么可打的。\n\n我的态度很明确：今天这一轮我站9号。对跳里必有一狼，8号的金水和心路历程明显不如9号扎实，建议好人把票集中。我1号的票，今天认9号，过。","data":{}},{"seq":21,"day":1,"phase":"DAY_SPEECH","channel":"public","kind":"speech","actor":2,"to_seat":null,"text":"我是2号，先回应9号：你把我放进警徽流不能成为你身份成立的理由，明天验我可以，但今天大家要基于现有信息投票。两名预言家对跳，我目前偏向8号。8号验7号虽然信息量一般，但7号的原始发言确实更像普通好人，且8号至少明确交代了验人动机和后续查验5号。9号验1号的理由听起来完整，但1号目前是唯一强力替9号站边的人，这个金水和站边存在互相绑定的可能。尤其1号对8号的批评很满，却没有充分考虑9号也可能利用后置位金水建立狼队链条。我不建议今天因为1号的站边就无脑认9号。5号的自证能力需要后续验证，今天不优先处理；3号、4号偏保守，暂时中性；6号昨晚被救，至少不像当前焦点。我的票会投9号，先从预言家对跳中处理我更不信的一张，明天再根据验人结果和5号的身份信息修正。","data":{}},{"seq":22,"day":1,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":3,"to_seat":null,"text":"我之前的分析很清楚，9号的验人选择和心路历程更扎实，8号给7号发金水的逻辑站不住脚。我的票投8号，推掉对跳里更可疑的那张。","data":{}},{"seq":23,"day":1,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":3,"to_seat":null,"text":"3号 投给 8号","data":{"action":"vote","target":8}},{"seq":24,"day":1,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":4,"to_seat":null,"text":"我听完两名跳预言家的玩家的发言，2号点出的9号和1号金水互相绑定拉票的问题很关键，8号的验人逻辑和心路历程更扎实，9号悍跳的嫌疑更大，我的票投给9号。","data":{}},{"seq":25,"day":1,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":4,"to_seat":null,"text":"4号 投给 9号","data":{"action":"vote","target":9}},{"seq":26,"day":1,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":5,"to_seat":null,"text":"1号说8号首夜验7号是\u0027用宝贵验人换认可\u0027，这逻辑简直可笑，首夜盲验哪来的信息量可言？1号这种强行帮9号打煽动的发言，暴露出他和9号大概率是双狼。我5号底牌猎人，不怕抗推也不怕对跳，今天坚定站边8号真预言家，全票出9号，如果狼队今晚敢刀我，我开枪自然有交代。","data":{}},{"seq":27,"day":1,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":5,"to_seat":null,"text":"5号 投给 9号","data":{"action":"vote","target":9}},{"seq":28,"day":1,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":6,"to_seat":null,"text":"5号已经拍出猎人身份带队站8号，1号无脑死保9号且煽动意图太重，9号悍跳面极大，我作为被救好人牌跟神职走，票投9号。","data":{}},{"seq":29,"day":1,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":6,"to_seat":null,"text":"6号 投给 9号","data":{"action":"vote","target":9}},{"seq":30,"day":1,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":7,"to_seat":null,"text":"我是8号的金水，接到金水我不盲从，但听完全场发言，9号验1号金水、1号又过度煽动站边9号，这对绑定感太强。5号拍猎人站8号，6号被救好人也跟神走，我作为8号金水有责任站出来归票。今天出9号，明天看验人再修正。","data":{}},{"seq":31,"day":1,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":7,"to_seat":null,"text":"7号 投给 9号","data":{"action":"vote","target":9}},{"seq":32,"day":1,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":8,"to_seat":null,"text":"9号悍跳，验人逻辑、心路历程全部造假，1号绑定站边，3号也疑似狼队友，今天全票出9号。我是真预言家，7号金水，明天警徽流验5号，5号自称猎人，我今晚验他给好人阵营定下一个关键身份。守卫今晚请保我，女巫解药已用但还有毒药，如果验出5号是查杀我会留到明晚报。今晚刀口大概率在我身上，好人们务必守好这一夜。票投9号。","data":{}},{"seq":33,"day":1,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":8,"to_seat":null,"text":"8号 投给 9号","data":{"action":"vote","target":9}},{"seq":34,"day":1,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":9,"to_seat":null,"text":"我的立场不变：8号悍跳，验7号发金水是在拉票，心路历程薄弱；我是真预言家，1号金水，今天必须处理8号。好人请跟我把票投给8号，过。","data":{}},{"seq":35,"day":1,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":9,"to_seat":null,"text":"9号 投给 8号","data":{"action":"vote","target":8}},{"seq":36,"day":1,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":1,"to_seat":null,"text":"我1号的立场从白天发言起就没变过：9号验我金水、心路历程指向明确，8号首夜验7号发金水信息量太低，我信9号。今天这一票我投8号。","data":{}},{"seq":37,"day":1,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":1,"to_seat":null,"text":"1号 投给 8号","data":{"action":"vote","target":8}},{"seq":38,"day":1,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":2,"to_seat":null,"text":"我投9号：8号的验人动机和视角更自然，9号与1号互相绑定拉票，先处理我更不信的9号。","data":{}},{"seq":39,"day":1,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":2,"to_seat":null,"text":"2号 投给 9号","data":{"action":"vote","target":9}},{"seq":40,"day":1,"phase":"DAY_VOTE","channel":"public","kind":"resolution","actor":null,"to_seat":null,"text":"9号 被放逐（6票）","data":{"target":9,"votes":6}},{"seq":41,"day":1,"phase":"DAY_LAST_WORDS","channel":"public","kind":"speech","actor":9,"to_seat":null,"text":"我9号是预言家走的，好人输了这一票但还没输这局。1号是我金水，全场记住；3号这轮投8号，我认他是好人，别被打进狼坑。8号悍跳狼，5号拍猎人带队节奏太硬，6号被救后直接绑死8号也不干净，好人回头还有机会。我走了，今晚狼人大概率刀8号或者5号做局，守卫女巫自己斟酌。","data":{}},{"seq":42,"day":2,"phase":"NIGHT_START","channel":"public","kind":"system","actor":null,"to_seat":null,"text":"天黑请闭眼","data":{}},{"seq":43,"day":2,"phase":"NIGHT_WOLF_CHAT","channel":"wolf","kind":"speech","actor":1,"to_seat":null,"text":"8号是全场唯一被9号出局反证出来的真预言家，今晚不刀他，明天他的验人就会把我们1号、3号的位置全钉死——守卫保他也认了，这一刀必须压8号；若你们实在怕守卫，退而求其次刀2号或4号这种站对边的逻辑位也行，但我这一票投8号。","data":{}},{"seq":44,"day":2,"phase":"NIGHT_WOLF_CHAT","channel":"wolf","kind":"speech","actor":3,"to_seat":null,"text":"同意1号，今晚必须刀8号，他是真预言家且已经公告明天验5号，拖一天我们三个都可能被钉死，守卫保他也得刀，这一刀没得商量。","data":{}},{"seq":45,"day":2,"phase":"NIGHT_WOLF","channel":"wolf","kind":"action","actor":1,"to_seat":null,"text":"主张击杀 8号","data":{"action":"kill","target":8}},{"seq":46,"day":2,"phase":"NIGHT_WOLF","channel":"wolf","kind":"action","actor":3,"to_seat":null,"text":"主张击杀 8号","data":{"action":"kill","target":8}},{"seq":47,"day":2,"phase":"NIGHT_WOLF","channel":"wolf","kind":"resolution","actor":null,"to_seat":null,"text":"狼队决议：今晚击杀 8号（2/2 票，多数通过，提议者 1号、3号）","data":{"target":8,"votes":2,"total":2,"tied":false}},{"seq":48,"day":2,"phase":"NIGHT_WITCH","channel":"private","kind":"action","actor":4,"to_seat":4,"text":"你对 1号 使用了毒药","data":{"action":"poison","target":1}},{"seq":49,"day":2,"phase":"NIGHT_SEER","channel":"private","kind":"resolution","actor":8,"to_seat":8,"text":"你查验了 5号 Qwen，结果是好人","data":{"target":5,"is_wolf":false}},{"seq":50,"day":2,"phase":"DAY_ANNOUNCE","channel":"public","kind":"resolution","actor":null,"to_seat":null,"text":"昨晚死亡的是：8号、1号","data":{}},{"seq":51,"day":2,"phase":"DAY_SPEECH","channel":"public","kind":"system","actor":null,"to_seat":null,"text":"本轮发言顺序：3号 → 4号 → 5号 → 6号 → 7号 → 2号","data":{}},{"seq":52,"day":2,"phase":"DAY_SPEECH","channel":"public","kind":"speech","actor":3,"to_seat":null,"text":"我是3号，昨晚死了8号和1号，局势非常不好。8号是真预言家被狼刀了，9号出局的遗言说8号是悍跳狼，但8号今晚就被刀证明了——狼队刀掉了真预言家，9号确实是悍跳狼无误，我第1天投8号是因为当时信息不足判断失误，事后证明我站错了，这一点我承认。\n\n现在来分析局势：存活的有2号、3号、4号、5号、6号、7号，共6人。8号已经公告了昨晚验5号的计划，但8号被刀意味着这个验人结果我们永远不知道了。\n\n现在我重新梳理一下疑点：第一，1号昨晚也死了。9号遗言给1号发了金水，但1号和9号是绑定关系，1号是9号悍跳计划的配合者，9号是狼，那1号大概率也是狼——1号死了，意味着狼队可能损失了两个人（9号出局+1号被刀）。但这也有可能是狼刀同伴，不太可能；更可能的解释是：1号是好人，被狼刀了，狼队今晚刀了8号和1号双杀。\n\n等等，昨晚只死了8号和1号两个人，说明狼队昨晚刀了一个人，另一个是……没有，正常情况下狼一晚只刀一人。8号和1号同时死亡，说明女巫昨晚用毒药毒了其中一个，或者……这局有别的规则？不对，公告是\u0027昨晚死亡的是：8号、1号\u0027，说明狼刀一人、女巫毒一人，两人同时死亡。\n\n那么：狼刀8号，女巫毒1号。或者狼刀1号，女巫毒8号。考虑到8号是真预言家，狼队更有理由刀8号；女巫可能毒了1号，因为1号在第一天强力站9号（悍跳狼），被判断为狼。\n\n如果女巫昨晚用了毒，那女巫现在没有毒药了（解药第1天用了，毒药第2天用了）。\n\n现在场上6人，如果有2狼存活，好人已经岌岌可危——6人里2狼4好，狼队刀一人就变5人里2狼，再刀一晚变4人里2狼，好人就输了。\n\n所以今天必须出一个狼人。我倾向于关注5号——5号自称猎人、第一天强力带队出9号，但5号如果真是猎人的话今天应该有所表态。另外6号被救、第一天跟着投了9号，行为相对中规中矩。\n\n我今天怀疑的对象是5号，理由：5号第一天发言攻击性极强，自称有自证能力、后来拍猎人，但猎人身份无法在活着的时候自证，这个发言更像是狼人在模仿神职发言风格建立权威。如果5号是狼，那今天必须处理。我今天投5号。","data":{}},{"seq":53,"day":2,"phase":"DAY_SPEECH","channel":"public","kind":"speech","actor":4,"to_seat":null,"text":"3号，我先回应你刚才的推理：你说昨晚双死是狼刀加女巫毒药，这个判断完全没错，但是你接下来的方向走歪了。我给你捋清楚：8号是真预言家，昨晚被狼刀走，这个没有任何疑问。那1号是谁毒走的？就是女巫毒走的。第一天1号和悍跳狼9号从头到尾深度绑定，强行煽动所有人站9号打8号，女巫第一天看在眼里，夜里直接把1号毒了，这是完全正确的操作——1号就是9号的狼队友，根本不是什么好人金水。你现在把狼坑往5号身上扣，说5号拍猎人是装神职，我第一个不认。第一天投票的时候，全场除了3号你自己，剩下站边8号出9号的人，全部是跟着5号拍猎人的带队走的：6号、7号、2号都认5号是真神，你当时也是跟着大队伍投了9号的，现在反过来要打5号是狼，你的立场到底站哪边？现在场上6个人，9号、1号已经双狼出局，剩下最多还有1狼藏在人堆里。5号是明拍猎人的牌，今天谁敢出5号，谁就是狼想抗推真神职。我今天认下5号、6号、7号、2号都是好人行为，你3号在8号被刀、狼已经露了马脚的情况下，不先盘清楚1号是狼走的，反而转头去打场上唯一明拍神职的5号，你的嫌疑现在比谁都大。这一轮我跟大家站同一战线，今天就出你3号——你要真好人，我们明天验完身份自然给你正名，要是你是藏到现在的最后一狼，今天出你好人直接获胜。","data":{}},{"seq":54,"day":2,"phase":"DAY_SPEECH","channel":"public","kind":"speech","actor":5,"to_seat":null,"text":"我是5号，全场唯一真猎人。3号玩家，你的发言已经爆了。首先，昨晚8号真预言家倒牌，1号作为9号悍跳狼的死忠粉，必然是吃女巫毒走的，你居然盘1号是被狼刀？这种无视基本逻辑的发言，要么是你视角缺失，要么就是你在强行保你的狼队友1号。其次，你第一天把票投给8号真预言家，今天又来打我这个带队出9号的真猎人，你的狼尾巴已经藏不住了。4号玩家的逻辑非常清晰，1号吃毒、9号出局，双狼已走。现在场上6人，7号是8号验的金水，6号是首夜银水，我是猎人，4号视角正确，狼坑只能在2号和3号里。3号今天的发言就是铁狼冲锋，我在此归票3号。2号玩家，如果你底牌是好人，请跟我一起出3号。3号如果你敢煽动票型抗推我，我开枪必定带走你，好人阵营稳赢。过。","data":{}},{"seq":55,"day":2,"phase":"DAY_SPEECH","channel":"public","kind":"speech","actor":6,"to_seat":null,"text":"我是6号。昨晚双死局面非常清晰：8号真预言家吃刀，1号作为9号悍跳狼的铁冲锋队友吃女巫毒药出局。场上局势其实已经大明，7号是8号生前发出的金水，5号是拍出身份的明猎人，我是首夜被救的银水牌。3号你第一天的票型就挂在真预言家8号头上，今天在8号倒牌坐实真预言家身份后，你不仅没有反思，反而直接把矛头指向带队出掉悍跳狼的猎人5号，想要煽动推神职，你的狼面已经彻底藏不住了。4号和5号的逻辑非常正，今天没有任何其他选择，好人全票归3号出局。我听猎人5号的指挥，票投3号，过。","data":{}},{"seq":56,"day":2,"phase":"DAY_SPEECH","channel":"public","kind":"speech","actor":7,"to_seat":null,"text":"我是7号，8号生前验我的金水，今天8号倒牌，我的好人身份已经不用再论证了。昨晚双死的逻辑链条非常清晰：8号真预言家吃狼刀，1号作为9号悍跳狼的铁绑队友吃女巫毒，9号昨天出局已经是狼，1号跟着走，两狼已死。如果这局是三狼配置，场上最多还剩一狼。我逐一过存活玩家：我自己是金水不用盘；6号首夜银水、两天投票都正确；5号明拍猎人带队出9号，如果5号是狼，第一天没必要这么高调冲锋，风险太大；4号今天逻辑清晰、第一天投票也正确；2号第一天投9号、发言中性偏好人。唯一不对的就是3号——第一天票挂在真预言家8号头上，今天8号倒牌坐实了，你不反思自己的错误判断，反而掉头去打场上唯一明神猎人5号，这个方向太反常了。你说5号猎人无法自证所以像狼装神，但猎人就是活着的时候没法自证，你这个质疑本身就不成立。我的票投3号，好人全票归3号，今天出了狼这局就赢了。过。","data":{}},{"seq":57,"day":2,"phase":"DAY_SPEECH","channel":"public","kind":"speech","actor":2,"to_seat":null,"text":"我2号今天明确投3号。首日8号和9号对跳时，我基于当时发言投了9号；如今8号被狼刀，结合7号金水，8号是真预言家的概率已经极高。双死更合理的解释是狼刀8号、女巫毒1号，9号和1号大概率已经是两狼出局。3号首日把票投给真预言家，今天又在没有任何新验人信息的情况下直接攻击5号明拍猎人，这个转向非常反常。5号即使暂时不能自证，也没有出现对跳猎人的牌；反而3号是在给抗推神职制造突破口。4号、6号、7号的归因一致且票型支持出9号，我今天跟随5号归票3号。","data":{}},{"seq":58,"day":2,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":3,"to_seat":null,"text":"我的立场从白天发言就没变过，今天我的票投5号，理由我已经阐述得很清楚了。","data":{}},{"seq":59,"day":2,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":3,"to_seat":null,"text":"3号 投给 5号","data":{"action":"vote","target":5}},{"seq":60,"day":2,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":4,"to_seat":null,"text":"3号首日票挂真预言家8号头上，8号已被狼刀坐实好人身份，你不仅不反思判断失误，反而转头攻击带队出掉悍跳狼9号的明猎人5号，全程逻辑自相矛盾，是藏到现在的最后一狼，我今天坚定跟大家出你。","data":{}},{"seq":61,"day":2,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":4,"to_seat":null,"text":"4号 投给 3号","data":{"action":"vote","target":3}},{"seq":62,"day":2,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":5,"to_seat":null,"text":"3号首日票挂真预言家，今日又强打带队的明猎人，逻辑彻底崩坏，铁狼一匹，全票出3号。","data":{}},{"seq":63,"day":2,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":5,"to_seat":null,"text":"5号 投给 3号","data":{"action":"vote","target":3}},{"seq":64,"day":2,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":6,"to_seat":null,"text":"3号首日投真预言家8号，今日又妄图抗推明猎人5号，行为和逻辑完全暴露，好人全票出3号。","data":{}},{"seq":65,"day":2,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":6,"to_seat":null,"text":"6号 投给 3号","data":{"action":"vote","target":3}},{"seq":66,"day":2,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":7,"to_seat":null,"text":"我是8号金水，身份已坐实。3号首日票挂真预言家8号头上，8号昨晚被狼刀已经证明8号是真预言家、9号是悍跳狼。3号不仅不反思站错边，反而掉头攻击带队出掉悍跳狼的明猎人5号，这个方向完全反常，就是最后一狼想抗推真神职。今天全票出3号，好人直接赢。","data":{}},{"seq":67,"day":2,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":7,"to_seat":null,"text":"7号 投给 3号","data":{"action":"vote","target":3}},{"seq":68,"day":2,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":2,"to_seat":null,"text":"我今天投3号：首日我基于当时信息投了9号，8号倒牌后更支持8号是真预言家；3号今天转而攻击明牌猎人5号，现阶段更应处理3号。","data":{}},{"seq":69,"day":2,"phase":"DAY_VOTE","channel":"public","kind":"speech","actor":2,"to_seat":null,"text":"2号 投给 3号","data":{"action":"vote","target":3}},{"seq":70,"day":2,"phase":"DAY_VOTE","channel":"public","kind":"resolution","actor":null,"to_seat":null,"text":"3号 被放逐（5票）","data":{"target":3,"votes":5}},{"seq":71,"day":2,"phase":"DAY_LAST_WORDS","channel":"public","kind":"speech","actor":3,"to_seat":null,"text":"我3号是好人走的，但我不后悔。我第一天投8号是因为我真的认为9号的心路历程更扎实，这是判断失误，不是狼行为。今天我打5号是因为5号全程掌控节奏、带队太硬，猎人不该这么主动暴露自己——猎人暴露身份对自己没好处，只有狼人伪装猎人才需要这么早拍身份。你们把票全给了5号指向的方向，却没人质疑5号为什么这么急着建立权威。我走了，但我把这个疑点留给你们：5号和4号的配合太默契了，第二天两人几乎同步输出完全一致的逻辑，好人自己想清楚。","data":{}}];
+const META = {"days":2,"seats":[{"no":1,"label":"DeepSeek","model":"deepseek-flash","role":"Werewolf","role_cn":"狼人","is_wolf":true},{"no":2,"label":"GPT","model":"gpt-5.6-terra","role":"Villager","role_cn":"村民","is_wolf":false},{"no":3,"label":"Claude","model":"claude-sonnet-4-6","role":"Werewolf","role_cn":"狼人","is_wolf":true},{"no":4,"label":"Doubao","model":"ep-20261005143108-gcv24","role":"Witch","role_cn":"女巫","is_wolf":false},{"no":5,"label":"Qwen","model":"qwen3.7-max","role":"Hunter","role_cn":"猎人","is_wolf":false},{"no":6,"label":"Gemini","model":"gemini-3.8-flash","role":"Villager","role_cn":"村民","is_wolf":false},{"no":7,"label":"GLM","model":"glm-5.2","role":"Villager","role_cn":"村民","is_wolf":false},{"no":8,"label":"MiniMax","model":"minimax-m3","role":"Seer","role_cn":"预言家","is_wolf":false},{"no":9,"label":"Kimi","model":"kimi-k2.7-code","role":"Werewolf","role_cn":"狼人","is_wolf":true}],"winner":"good"};
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const HASH = new URLSearchParams(location.hash.slice(1));
+
+/* ---------- 座位 & 色板：色相避开红(25)/金(85)/橙(60)，OKLCH 等亮度 ---------- */
+let SEATS = META.seats;
+const FAKE = +HASH.get('fake') || 0;
+if (FAKE) SEATS = Array.from({length: FAKE}, (_, i) => ({
+  no: i+1, label: ['DeepSeek','GPT','Claude','Doubao','Qwen','Gemini','GLM','MiniMax','Kimi','Grok'][i%10],
+  role: 'x', role_cn: ['狼人','村民','女巫','预言家','猎人'][i%5], is_wolf: i%5===0, model: 'm'}));
+const EVS = FAKE ? [] : EV;
+const N = SEATS.length;
+const byNo = Object.fromEntries(SEATS.map(s => [s.no, s]));
+const HUES = [245,320,145,195,295,120,220,345,170,270];
+const colorOf = no => `oklch(.78 .12 ${HUES[(no-1)%10]})`;
+const ROLECLS = {Werewolf:'wolf', Seer:'seer', Witch:'witch', Hunter:'hunter', Villager:'villager'};
+const PHASE_CN = {NIGHT_START:'天黑', NIGHT_WOLF_CHAT:'狼人商议', NIGHT_WOLF:'狼人击杀', NIGHT_SEER:'预言家查验',
+  NIGHT_WITCH:'女巫行动', NIGHT_GUARD:'守卫', NIGHT_RESOLVE:'夜间结算', DAY_ANNOUNCE:'天亮', DAY_SPEECH:'发言',
+  DAY_VOTE:'投票', DAY_VOTE_PK:'PK 投票', DAY_PK_SPEECH:'PK 发言', DAY_LAST_WORDS:'遗言', DAY_HUNTER:'猎人'};
+const CAUSE_CN = {wolf:'被刀杀', poison:'被毒杀', vote:'被放逐', hunter:'被枪击', night:'昨夜离席'};
+const CAUSE_GLYPH = {wolf:'刀', poison:'毒', vote:'票', hunter:'枪', night:'☾'};
+
+/* ---------- 死亡派生（原型里是 legacy 回填；新版应读 data.deaths） ---------- */
+EVS.forEach(e => {
+  e.deaths = [];
+  if (e.phase === 'DAY_ANNOUNCE' && /死亡/.test(e.text)) {
+    (((e.text.split('：')[1]) || '').match(/\d+/g) || []).forEach(n => {
+      n = +n;
+      const poison = EVS.some(x => x.day === e.day && x.phase === 'NIGHT_WITCH' && x.data && x.data.action === 'poison' && x.data.target === n);
+      e.deaths.push({no: n, cause: poison ? 'poison' : 'wolf'});
+    });
+  } else if (e.kind === 'resolution' && /^DAY_VOTE/.test(e.phase) && e.data && e.data.target != null) {
+    e.deaths.push({no: e.data.target, cause: 'vote'});
+  } else if (e.phase === 'DAY_HUNTER' && e.data && e.data.target != null) {
+    e.deaths.push({no: e.data.target, cause: 'hunter'});
+  }
+});
+
+/* ---------- 状态：mode + cursor（可见事件数） ---------- */
+let mode = HASH.get('mode') === 'god' ? 'god' : 'spec';
+let V = [], cur = 0;
+const isGod = () => mode === 'god';
+const redactCause = c => isGod() ? c : (c === 'wolf' || c === 'poison' ? 'night' : c);   // 观众看不到「刀 / 毒」
+function rebuildV(keepSeq) {
+  V = EVS.filter(e => isGod() || e.channel === 'public');
+  if (keepSeq != null) cur = V.filter(e => e.seq <= keepSeq).length;
+}
+function seqAtCursor() { return cur ? V[cur-1].seq : -1; }
+
+/* ---------- 图标 ---------- */
+const SUN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2" fill="currentColor" fill-opacity=".25"/><path d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4M5.3 5.3l1.7 1.7M17 17l1.7 1.7M5.3 18.7 7 17M17 7l1.7-1.7"/></svg>';
+const MOON = '<svg viewBox="0 0 24 24" fill="currentColor" fill-opacity=".22" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5Z"/></svg>';
+
+const medal = (no, m, extra = '') =>
+  `<div class="medal" style="--c:${colorOf(no)};${m ? `--m:${m}px;` : ''}">${esc((() => { const l = byNo[no]?.label || '?'; return l[0].toUpperCase() + (l[1] || '').toLowerCase(); })())}<span class="no">${no}</span>${extra}</div>`;
+const nameOf = no => byNo[no]?.label || (no + '号');
+const rolePill = no => isGod() && byNo[no]?.role ? `<span class="pill-role role-${ROLECLS[byNo[no].role] || 'villager'}">${esc(byNo[no].role_cn)}</span>` : '';
+
+/* ---------- 圆桌 ---------- */
+function seatPos(no) {                         // 与 CSS 的 calc(50% + 39% * cos/sin) 同一公式
+  const a = ((no - 1) / N) * 2 * Math.PI - Math.PI / 2;
+  return [50 + 39 * Math.cos(a), 50 + 39 * Math.sin(a)];
+}
+function renderTable(shown, last) {
+  const lastSeq = last ? last.seq : -1;
+  const dead = {};
+  EVS.filter(e => e.seq <= lastSeq).forEach(e => e.deaths.forEach(d => dead[d.no] = d.cause));
+  // 当前这一轮的票数徽章
+  const votes = {};
+  if (last) {
+    const phases = shown.filter(e => e.day === last.day && /^DAY_VOTE/.test(e.phase) && e.data && e.data.action === 'vote' && e.data.target != null);
+    const latest = phases.length ? phases[phases.length-1].phase : null;
+    const resolved = shown.some(e => e.day === last.day && e.kind === 'resolution' && /^DAY_VOTE/.test(e.phase) && e.phase === latest && e.data && e.data.target != null);
+    phases.filter(e => e.phase === latest).forEach(e => votes[e.data.target] = (votes[e.data.target] || 0) + 1);
+    if (resolved) Object.keys(votes).forEach(k => delete votes[k]);   // 结算后票数交给票型卡，座位上只留死因章
+  }
+  const speaker = last && last.kind === 'speech' && last.actor ? last.actor : null;
+  const html = SEATS.map((s, i) => {
+    const d = dead[s.no];
+    const cls = ['seat', d ? 'dead' : '', speaker === s.no && !d ? 'speaking' : ''].join(' ');
+    const badge = d ? `<span class="cause ${redactCause(d)}">${CAUSE_GLYPH[redactCause(d)]}</span>` : '';
+    const vt = votes[s.no] ? `<span class="votes">${votes[s.no]}</span>` : '';
+    return `<div class="${cls}" style="--a:${(i / N) * 360 - 90}deg;--c:${colorOf(s.no)}" title="${esc(s.label)}">
+      <div style="position:relative">${medal(s.no)}${badge}${vt}</div>
+      <div class="nm">${esc(s.label)}</div>${isGod() && s.role !== 'x' ? `<div class="rl role-${ROLECLS[s.role] || 'villager'}">${esc(s.role_cn)}</div>` : ''}</div>`;
+  }).join('');
+  $('#seats').innerHTML = html;
+  // 手机座位条
+  $('#strip').innerHTML = SEATS.map(s => {
+    const d = dead[s.no];
+    return `<div class="seat ${d ? 'dead' : ''} ${speaker === s.no && !d ? 'speaking' : ''}" style="--c:${colorOf(s.no)}">
+      <div style="position:relative">${medal(s.no)}${d ? `<span class="cause ${redactCause(d)}">${CAUSE_GLYPH[redactCause(d)]}</span>` : ''}</div><div class="nm">${esc(s.label)}</div></div>`;
+  }).join('');
+  // 统计
+  const alive = SEATS.filter(s => !dead[s.no]);
+  $('#tstat').innerHTML = isGod() && !FAKE
+    ? `<span>狼人 <b style="color:var(--wolf)">${alive.filter(s => s.is_wolf).length}</b></span><span>好人 <b>${alive.filter(s => !s.is_wolf).length}</b></span>`
+    : `<span>存活 <b>${alive.length}</b> / ${N}</span>`;
+  return dead;
+}
+
+function renderLinks(last) {
+  const svg = $('#links'); svg.innerHTML = '';
+  if (!last || !last.data) return;
+  let from = last.actor, to = last.data.target, color = null;
+  if (last.data.action === 'vote' && to != null) color = 'var(--gold)';
+  else if (isGod() && last.channel === 'wolf' && last.data.action === 'kill') color = 'oklch(.68 .18 25)';
+  else if (isGod() && last.phase === 'NIGHT_SEER' && last.to_seat) { from = last.to_seat; color = 'oklch(.78 .12 300)'; }
+  else if (isGod() && last.phase === 'NIGHT_WITCH' && last.to_seat && to != null) { from = last.to_seat; color = last.data.action === 'poison' ? 'oklch(.7 .15 150)' : 'oklch(.82 .12 160)'; }
+  if (!color || !from || to == null || !byNo[from] || !byNo[to]) return;
+  const [x1, y1] = seatPos(from), [x2, y2] = seatPos(to);
+  const cx = (x1 + x2) / 2 * .42 + 50 * .58, cy = (y1 + y2) / 2 * .42 + 50 * .58;     // 控制点向桌心拉
+  svg.innerHTML = `<defs><marker id="ar" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 10 5 0 10z" fill="${color}" stroke="none" style="animation:none;stroke-dasharray:none;opacity:1"/></marker></defs>
+    <path d="M${x1} ${y1} Q${cx} ${cy} ${x2} ${y2}" stroke="${color}" marker-end="url(#ar)"/>`;
+}
+
+function renderHub(last, night) {
+  const day = last ? last.day : 0;
+  const sub = last ? (PHASE_CN[last.phase] || '') : '';
+  let q = '';
+  if (last && last.kind === 'speech' && last.actor && !(last.data && last.data.action === 'vote')) {
+    q = `<div class="q"><i>${esc(nameOf(last.actor))}</i>${esc(last.text.replace(/\s+/g, ' '))}</div>`;
+  } else if (last && last.data && last.data.action === 'vote') {
+    q = `<div class="q"><i>${esc(nameOf(last.actor))}</i>${last.data.target == null ? '弃票' : '投给 ' + esc(nameOf(last.data.target))}</div>`;
+  }
+  $('#hub').innerHTML = `${night ? MOON : SUN}<div class="d">${day ? '第 ' + day + ' 天' : '开局'}</div><div class="p">${night ? '夜晚' : '白天'}${sub ? ' · ' + sub : ''}</div>${q}`;
+  $('#pill').innerHTML = `${night ? MOON : SUN}<b>${day ? '第 ' + day + ' 天 · ' : ''}${night ? '夜晚' : '白天'}</b><span>${sub}</span>`;
+}
+
+/* ---------- 大桌 ---------- */
+/* ---- 投票事件识别与「引擎自生成文本」兜底 ----
+   ★ 原则：解析**引擎自己写死的**格式（"N号 投给 M号" / "N号 弃票" / "昨晚死亡的是：X、Y"）
+     是可靠的，因为格式由我们控制；解析**模型生成的自由发言**才是禁止的。
+     实测 46 局里只有 7 局的投票事件带 data.action/target（该字段 10-05 13:18 才加），
+     没有这层兜底，39 局老对局的票型卡是空的。 */
+const VOTE_RE = /^(\d+)号\s*投给\s*(\d+)号/;
+const ABSTAIN_RE = /^(\d+)号\s*弃票/;
+function voteTarget(e) {
+  if (e.data && e.data.action === 'vote') return { target: e.data.target, legacy: false };
+  const m = VOTE_RE.exec(e.text);    if (m) return { target: +m[2], legacy: true };
+  if (ABSTAIN_RE.test(e.text))       return { target: null, legacy: true };
+  return null;
+}
+const isVote = e => e.kind === 'speech' && /^DAY_VOTE/.test(e.phase) && !!voteTarget(e);
+/* 当前这条完整展开，历史长文折叠成 6 行，点击展开 —— 真实发言常有 500+ 字、段间空行，不折叠一条就占满一屏 */
+let LASTSEQ = -1;
+const speechCard = e => {
+  const long = e.text.length > 240 && e.seq !== LASTSEQ;
+  const tag = e.phase === 'DAY_LAST_WORDS' ? '<span class="tag">遗言</span>' : e.phase === 'DAY_PK_SPEECH' ? '<span class="tag">PK 发言</span>' : '';
+  return `<article class="card" style="--c:${colorOf(e.actor)}">${medal(e.actor)}<div class="bd">
+    <div class="hd"><b>${esc(nameOf(e.actor))}</b>${rolePill(e.actor)}${tag}${isGod() ? `<span class="meta">${esc(byNo[e.actor]?.model || '')} · #${e.seq}</span>` : ''}</div>
+    <div class="tx ${long ? 'clampN' : ''}">${esc(e.text).split(/\n+/).map(p => `<p>${p}</p>`).join('')}</div></div></article>`;
+};
+const voteCard = (r, a) => {
+  const who = (r || a).actor;
+  const vt = a ? voteTarget(a) : null;
+  const tgt = a ? (vt && vt.target != null
+      ? `<span class="to">投给 ${medal(vt.target, 20)} ${esc(nameOf(vt.target))}${vt.legacy ? '<i class="lg">按文本还原</i>' : ''}</span>`
+      : `<span class="to">弃票${vt && vt.legacy ? '<i class="lg">按文本还原</i>' : ''}</span>`) : '';
+  const body = r ? `<div class="tx clamp" title="点击展开">${esc(r.text)}</div>` : '';
+  return `<article class="card vote" style="--c:${colorOf(who)}">${medal(who)}<div class="bd">
+    <div class="hd"><b>${esc(nameOf(who))}</b>${rolePill(who)}${tgt}</div>${body}</div></article>`;
+};
+const orderChips = e => {
+  const nums = (e.text.split('：')[1] || '').match(/\d+/g) || [];
+  return `<div class="order"><span>发言顺序</span>${nums.map((n, i) => `${i ? '<em>›</em>' : ''}${medal(+n, 26)}`).join('')}</div>`;
+};
+/* 「本轮未发言」「X号 的调用失败」这类系统行：只给一行脚注，不能混进发言顺序 */
+const isOrder = e => e.kind === 'system' && e.phase === 'DAY_SPEECH' && e.text.includes('发言顺序');
+const noteLine = e => `<div class="note">${e.actor ? `<span class="medal" style="--m:18px;--c:${colorOf(e.actor)}">${e.actor}</span>` : ''}${esc(e.text)}</div>`;
+function tallyCard(e, before) {
+  const votes = before.filter(x => x.day === e.day && /^DAY_VOTE/.test(x.phase) === /^DAY_VOTE/.test(e.phase) && isVote(x));
+  const by = {}; let abst = 0, legacy = false;
+  votes.forEach(x => {
+    const vt = voteTarget(x);
+    if (vt.target == null) { abst++; return; }
+    (by[vt.target] ||= []).push(x.actor);
+    legacy = legacy || vt.legacy;
+  });
+  const rows = Object.entries(by).sort((a, b) => b[1].length - a[1].length || a[0] - b[0]);
+  const out = e.data && e.data.target;
+  const n = Object.values(by).reduce((s, v) => s + v.length, 0);
+  const title = out != null ? `<em>${esc(nameOf(out))}</em> 被放逐` : esc(e.text);
+  return `<section class="tally"><h4>${title}</h4><div class="sub">${out != null ? `${e.data.votes} 票` : ''}${n && out == null ? `${n} 票` : ''} · 第 ${e.day} 天投票结果${abst ? ` · ${abst} 人弃票` : ''}${legacy ? ' · 老对局按文本还原' : ''}</div>
+    ${rows.map(([t, vs]) => `<div class="trow ${+t === out ? 'out' : ''}">${medal(+t, 30)}<div class="n">${esc(nameOf(+t))}${+t === out ? ' · 放逐' : ''}</div>
+      <div class="bar">${vs.map(v => `<span class="dot" style="--c:${colorOf(v)}" title="${esc(nameOf(v))}">${v}</span>`).join('')}<span style="margin-left:4px;color:var(--dim);font:12px var(--mono)">${vs.length}</span></div></div>`).join('')}</section>`;
+}
+function fallCard(e, note) {
+  const sub = note ? `<p>${esc(note)}</p>` : '';
+  if (!e.deaths.length) {
+    return `<section class="fall calm"><h4>平安夜</h4><p>${note ? esc(note) : '昨夜无人离席'}</p></section>`;
+  }
+  const items = e.deaths.map(d => `<div class="it"><div style="position:relative">${medal(d.no, 62, `<span class="cause ${redactCause(d.cause)}">${CAUSE_GLYPH[redactCause(d.cause)]}</span>`)}</div>
+    <b style="font-size:14px">${esc(nameOf(d.no))}</b><span class="why">${CAUSE_CN[redactCause(d.cause)]}</span></div>`).join('');
+  const title = e.phase === 'DAY_HUNTER' ? `${esc(nameOf(e.actor))} 开枪带走了 ${esc(nameOf(e.deaths[0].no))}` : `昨夜，${e.deaths.map(d => esc(nameOf(d.no))).join(' · ')} 离席`;
+  return `<section class="fall"><div class="row">${items}</div><h4>${title}</h4>${sub}</section>`;
+}
+const nightOpen = {};
+/* 夜间报幕顺序 = 引擎真实顺序（engine.py:night）：守卫 → 狼人 → 女巫 → 预言家。
+   报幕是纯展示文本，不需要新协议字段 —— 由阶段边界推导即可。
+   ★ 但报幕行**只能在上帝视角出现**：角色已出局那一段不会再报幕，
+     观众一旦看到「预言家请睁眼」消失，就等于知道预言家死了。 */
+const NIGHT_SLOTS = [
+  { key: 'guard', phase: 'NIGHT_GUARD', label: '守卫' },
+  { key: 'wolf',  phase: 'NIGHT_WOLF',  label: '狼人' },
+  { key: 'witch', phase: 'NIGHT_WITCH', label: '女巫' },
+  { key: 'seer',  phase: 'NIGHT_SEER',  label: '预言家' },
+];
+function nightSlots(evs) {
+  return NIGHT_SLOTS.map(sl => ({
+    ...sl,
+    items: evs.filter(e => sl.key === 'wolf' ? e.channel === 'wolf' : e.phase === sl.phase),
+  })).filter(sl => sl.items.length);          // 该角色不在场 / 已出局 → 整段跳过，报幕自动合并
+}
+function nightSummary(slots) {
+  const bits = [];
+  const w = slots.find(s => s.key === 'wolf');
+  const wk = w && w.items.find(e => e.kind === 'resolution' && e.data && e.data.target != null);
+  if (wk) bits.push(`刀 ${wk.data.target}号`);
+  const wt = slots.find(s => s.key === 'witch');
+  if (wt) { const a = wt.items.find(e => e.data && e.data.action); if (a) bits.push(a.data.action === 'save' ? '救药' : a.data.action === 'poison' ? `毒 ${a.data.target}号` : '不用药'); }
+  const se = slots.find(s => s.key === 'seer');
+  if (se) { const a = se.items.find(e => e.data && e.data.target != null); if (a) bits.push(`验 ${a.data.target}号 ${a.data.is_wolf ? '狼' : '好人'}`); }
+  return bits.join(' · ') || '夜间行动';
+}
+const rb = t => `<div class="rb">${esc(t)}</div>`;
+function slotBody(sl, isCur) {
+  return sl.items.map(e => {
+    if (e.channel === 'wolf' && e.kind === 'speech') {
+      const long = e.text.length > 200 && !(isCur && e.seq === LASTSEQ);
+      return `<div class="wmsg" style="--c:${colorOf(e.actor)}">${medal(e.actor, 30)}<div class="t ${long ? 'tx clampN' : ''}"><b>${esc(nameOf(e.actor))}</b>${esc(e.text.replace(/\n+/g, ' '))}</div></div>`;
+    }
+    if (e.channel === 'wolf') return `<div class="chip">${e.kind === 'action' ? '🗡 ' + esc(nameOf(e.actor)) + '：' : '⚖ '}${esc(e.text)}</div>`;
+    return `<div class="pv"><i class="role-${e.phase === 'NIGHT_SEER' ? 'seer' : e.phase === 'NIGHT_WITCH' ? 'witch' : 'villager'}">${esc(sl.label)}</i><span>${esc(e.text)}</span></div>`;
+  }).join('');
+}
+function nightBlock(day, evs, isCur) {
+  const open = day in nightOpen ? nightOpen[day] : isCur;
+  const slots = nightSlots(evs);
+  let body = rb('天黑请闭眼');
+  slots.forEach((sl, i) => {
+    // 上一段收尾与下一段开场合成一行：「狼人请闭眼，女巫请睁眼」
+    body += rb(i === 0 ? `${sl.label}请睁眼` : `${slots[i - 1].label}请闭眼，${sl.label}请睁眼`);
+    body += slotBody(sl, isCur);
+  });
+  if (slots.length) body += rb(`${slots[slots.length - 1].label}请闭眼`);
+  return `<section class="night ${open ? 'open' : ''}" data-day="${day}"><button class="nh"><span>☾ 第 ${day} 夜</span><b>仅上帝可见</b><em>${esc(nightSummary(slots))}</em><i>${open ? '收起' : '展开'}</i></button><div class="nb">${body}</div></section>`;
+}
+/* 猎人报幕。猎人开枪是 **PUBLIC** 事件 —— 观众与上帝看到的一样，
+   这一点和夜间报幕（仅上帝）必须区分开。
+   ⚠ 引擎目前只在「开枪带走 X」时写 data.target，且**三个分支都不写 actor**，
+     所以发起人只能从文本里抠。文档 §2.1 已列为待补字段。 */
+function hunterBlock(evs) {
+  const items = evs.map(e => {
+    const who = +(e.text.match(/^(\d+)号/) || [])[1];
+    const tgt = e.data && e.data.target != null ? e.data.target : null;
+    if (tgt != null && who) {
+      return `<div class="hunt shoot" style="--c:${colorOf(who)}">${medal(who, 30)}
+        <b>${esc(nameOf(who))}</b><span>猎人开枪带走</span>${medal(tgt, 26)}
+        <b style="--c:${colorOf(tgt)}">${esc(nameOf(tgt))}</b></div>`;
+    }
+    if (who) return `<div class="hunt" style="--c:${colorOf(who)}">${medal(who, 30)}<b>${esc(nameOf(who))}</b><span>${esc(e.text.replace(/^\d+号\s*/, ''))}</span></div>`;
+    return `<div class="hunt"><span>${esc(e.text)}</span></div>`;   // 「猎人被毒死，无法开枪」没有座位号
+  }).join('');
+  return `<section class="hblock">${rb('猎人请睁眼')}${items}${rb('猎人请闭眼')}</section>`;
+}
+function renderFeed(shown) {
+  LASTSEQ = shown.length ? shown[shown.length - 1].seq : -1;
+  let html = '', day = 0, nb = [], nsDay = 0, nn = '';
+  const flush = cur => {
+    if (nb.length) html += nightBlock(nb[0].day, nb, cur);          // 报幕块自己带「天黑请闭眼」
+    else if (nsDay) html += `<div class="beat night">☾ 天黑请闭眼</div>`;
+    nb = []; nsDay = 0;
+  };
+  for (let i = 0; i < shown.length; i++) {
+    const e = shown[i];
+    if (e.channel !== 'public') { nb.push(e); continue; }          // 仅上帝视角会走到这里：V 已被 redact 过滤
+    if (e.phase !== 'NIGHT_START') flush(false);
+    if (e.day > 0 && e.day !== day) { day = e.day; html += `<div class="div"><span>第 ${day} 天</span></div>`; }
+    if (e.phase === 'NIGHT_START') { nsDay = e.day; continue; }    // 交给 flush 决定：有报幕块就不重复
+    if (isOrder(e)) { html += orderChips(e); continue; }
+    if (e.phase === 'NIGHT_RESOLVE') { nn = e.text; continue; }    // 「6号 昨晚被救下了」并进天亮卡
+    if (e.phase === 'DAY_ANNOUNCE') { html += fallCard(e, nn); nn = ''; continue; }
+    if (e.phase === 'DAY_HUNTER' && e.kind === 'resolution') {
+      const grp = [e];
+      while (shown[i + 1] && shown[i + 1].phase === 'DAY_HUNTER' && shown[i + 1].kind === 'resolution') grp.push(shown[++i]);
+      html += hunterBlock(grp); continue;
+    }
+    if (e.kind === 'resolution' && /^DAY_VOTE/.test(e.phase)) { html += tallyCard(e, shown.slice(0, i)); continue; }
+    if (e.kind === 'resolution') { html += `<div class="beat">${esc(e.text)}</div>`; continue; }
+    if (e.kind === 'speech' && /^DAY_VOTE/.test(e.phase)) {
+      if (isVote(e)) { html += voteCard(null, e); continue; }          // 只有动作、没有理由
+      const nx = shown[i + 1];
+      if (nx && nx.actor === e.actor && nx.phase === e.phase && isVote(nx)) { html += voteCard(e, nx); i++; continue; }
+      html += voteCard(e, null); continue;
+    }
+    if (e.kind === 'speech') { html += speechCard(e); continue; }
+    if (e.kind === 'system') { html += noteLine(e); continue; }
+    html += `<div class="beat">${esc(e.text)}</div>`;
+  }
+  flush(true);                                                       // 末尾仍在夜里 = 当前夜，展开
+  const fw = $('#fw'), pinned = fw.scrollHeight - fw.scrollTop - fw.clientHeight < 160;
+  $('#feed').innerHTML = html || '<div class="beat" style="margin-top:80px">拖动时间轴或点击 ▶ 开始回放</div>';
+  if (pinned) fw.scrollTop = fw.scrollHeight;
+}
+/* ---------- 时间轴 ---------- */
+function buildTimeline() {
+  const T = Math.max(V.length, 1), pct = i => (i / T * 100);
+  let marks = '', start = -1;
+  V.forEach((e, i) => {
+    if (e.phase === 'NIGHT_START') start = i;
+    if (e.phase === 'DAY_ANNOUNCE' && start >= 0) { marks += `<div class="band" style="left:${pct(start)}%;width:${pct(i - start)}%"></div>`; start = -1; }
+  });
+  if (start >= 0) marks += `<div class="band" style="left:${pct(start)}%;width:${pct(V.length - start)}%"></div>`;
+  V.forEach((e, i) => {
+    if (e.deaths && e.deaths.length) marks += `<div class="tick death" style="left:${pct(i + .5)}%"></div>`;
+    else if (e.kind === 'resolution' && /^DAY_VOTE/.test(e.phase)) marks += `<div class="tick vote" style="left:${pct(i + .5)}%"></div>`;
+  });
+  $('#marks').innerHTML = marks;
+  // 形势曲线：观众只给「总存活」，上帝才分阵营 —— 否则曲线会泄露身份
+  const dead = new Set(); const tot = [], wf = [], gd = [];
+  for (let i = 0; i <= V.length; i++) {
+    if (i > 0) (V[i-1].deaths || []).forEach(d => dead.add(d.no));
+    const al = SEATS.filter(s => !dead.has(s.no));
+    tot.push(al.length); wf.push(al.filter(s => s.is_wolf).length); gd.push(al.filter(s => !s.is_wolf).length);
+  }
+  const line = (arr, max, color, w = 1.4) => `<polyline fill="none" stroke="${color}" stroke-width="${w}" vector-effect="non-scaling-stroke" stroke-linejoin="round"
+    points="${arr.map((v, i) => `${(i / Math.max(V.length, 1) * 100).toFixed(2)},${(24 - v / max * 22).toFixed(2)}`).join(' ')}"/>`;
+  $('#curve').innerHTML = isGod() ? line(gd, N, 'var(--accent)') + line(wf, N, 'oklch(.7 .17 25)') : line(tot, N, 'var(--accent)');
+}
+function renderPlayhead() {
+  const p = cur / Math.max(V.length, 1) * 100;
+  $('#head').style.left = p + '%'; $('#fill').style.width = p + '%';
+  const last = cur ? V[cur-1] : null;
+  $('#lbl').innerHTML = `<b>${last ? '第 ' + last.day + ' 天 · ' + (PHASE_CN[last.phase] || '') : '开局'}</b>事件 ${cur} / ${V.length}
+    <div class="legend">${isGod() ? '<span><i style="background:var(--accent)"></i>好人</span><span><i style="background:oklch(.7 .17 25)"></i>狼人</span>' : '<span><i style="background:var(--accent)"></i>存活</span>'}</div>`;
+}
+
+/* ---------- 总渲染 ---------- */
+function render() {
+  const shown = V.slice(0, cur), last = shown[shown.length - 1] || null;
+  const night = last ? /^NIGHT_/.test(last.phase) : true;
+  document.documentElement.dataset.phase = night ? 'night' : 'day';
+  document.documentElement.dataset.view = mode;
+  document.querySelectorAll('#seg button').forEach(b => b.classList.toggle('on', b.dataset.v === mode));
+  renderTable(shown, last); renderLinks(last); renderHub(last, night);
+  renderFeed(shown); renderPlayhead();
+}
+function setCur(n) { cur = Math.max(0, Math.min(V.length, n)); render(); }
+function jump(pred, dir = 1) {
+  for (let i = cur + (dir > 0 ? 0 : -2); i >= 0 && i < V.length; i += dir) if (pred(V[i])) return setCur(i + 1);
+}
+let timer = null;
+function stop() { clearTimeout(timer); timer = null; $('#bPlay').textContent = '▶'; }
+function play() {
+  if (timer) return stop();
+  if (cur >= V.length) cur = 0;
+  $('#bPlay').textContent = '⏸';
+  const step = () => {
+    if (cur >= V.length) return stop();
+    setCur(cur + 1);
+    const e = V[cur-1];
+    timer = setTimeout(step, 500 + Math.min(1100, (e.text || '').length * 16));
+  };
+  timer = setTimeout(step, 200);
+}
+$('#bPlay').onclick = play;
+$('#bPrev').onclick = () => { stop(); setCur(cur - 1); };
+$('#bNext').onclick = () => { stop(); setCur(cur + 1); };
+$('#bVote').onclick = () => { stop(); jump(e => e.kind === 'resolution' && /^DAY_VOTE/.test(e.phase)); };
+$('#bDeath').onclick = () => { stop(); jump(e => e.deaths && e.deaths.length); };
+$('#seg').onclick = ev => {
+  const v = ev.target.dataset.v; if (!v || v === mode) return;
+  const sq = seqAtCursor(); mode = v; rebuildV(sq); buildTimeline(); render();
+};
+const track = $('#track'); let drag = false;
+const seek = ev => { const r = track.getBoundingClientRect(); stop(); setCur(Math.round((ev.clientX - r.left) / r.width * V.length)); };
+track.addEventListener('pointerdown', ev => { drag = true; track.setPointerCapture(ev.pointerId); seek(ev); });
+track.addEventListener('pointermove', ev => drag && seek(ev));
+track.addEventListener('pointerup', () => drag = false);
+$('#feed').addEventListener('click', ev => {
+  const t = ev.target.closest('.vote .tx'); if (t) t.classList.toggle('clamp');
+  const nh = ev.target.closest('.nh'); if (nh) { const sec = nh.parentElement; nightOpen[+sec.dataset.day] = !sec.classList.contains('open'); render(); return; }
+  const l = ev.target.closest('.tx.clampN, .tx.opened'); if (l) { l.classList.toggle('clampN'); l.classList.toggle('opened'); }
+});
+addEventListener('keydown', ev => {
+  if (ev.code === 'Space') { ev.preventDefault(); play(); }
+  else if (ev.code === 'ArrowRight') { stop(); setCur(cur + 1); }
+  else if (ev.code === 'ArrowLeft') { stop(); setCur(cur - 1); }
+});
+
+rebuildV(HASH.get('seq') != null ? +HASH.get('seq') : 41);
+buildTimeline(); render();
+</script>
+</body>
+</html>

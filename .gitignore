@@ -1,0 +1,23 @@
+# 整个 config/ 不提交：
+#  - endpoints.json 存明文 api_key
+#  - seats.json 含中转站地址与本机代理配置
+# 示例配置见 config.example/，自己复制过去再填 key
+config/
+
+# 运行产物
+runs/
+__pycache__/
+*.pyc
+
+# 探针报告里可能带 base_url / 用量
+tools/probe_report.json
+
+# 前端开发依赖（jsdom 只给 tools/selftest_frontend.js 用）
+# 运行时零依赖：petite-vue 已经 vendored 到 static/vendor/
+node_modules/
+.npm-cache/
+package-lock.json
+
+# M3：Vue 3 + Vite 的构建产物，由 web/ 生成，不提交
+static/dist/
+web/dist/
