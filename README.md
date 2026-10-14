@@ -29,7 +29,8 @@
 | M0 探针 | 缓存 / 并发 / JSON mode / 模型可用性 | ✅ 完成 |
 | M1 内核 | 事件流 + 共享前缀渲染 + 双通道解析 + 文本版跑通 | ✅ 完成 |
 | M2 九座 | 真实九座对局 + fallback 代打验证 + 日志监控 | ✅ **完成**（2026-10-05） |
-| M3 调优 | bug 修复、prompt 迭代、代打链校正、模型替换等 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | 持续进行 |
+| M3 前端 | 卡牌立绘、发言连线、上帝视角 | 已拆分为独立项目 |
+| M4 调优 | bug 修复、prompt 迭代、代打链校正、模型替换等 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | 持续进行 |
 
 ### M2 完成情况（2026-10-05）
 
