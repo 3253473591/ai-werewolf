@@ -578,17 +578,17 @@ M3 想加气泡入场 / 日夜转场时，动画会被每来一条新消息重�
 ```
 
 - 优先级：`relay.proxy`（config）> 环境变量（`HTTPS_PROXY` / `http_proxy` / `ALL_PROXY` 等）> 直连
-- 留空字符串就是直连；端口改成你自己的即可
-- 7890 一般是 Clash 之类的 **mixed 端口**：国内通道直连还是走代理由代理端规则决定，
+- 留空字符串就是直连；端口改成你自己的即可（上面 7890 是 Clash 之类的常见 mixed 端口）
+- Clash 的 mixed 端口：国内通道直连还是走代理由代理端规则决定，
   代码不做 `no_proxy`（免得和代理端规则打架）
 - urllib 和 curl **两条传输都吃这个设置**（`curl` 加 `-x`）——只配 urllib 不够，
   「强制结束」那条路走的是 curl
 - 启动时会打一行 `[relay] 出站代理：...`，挂没挂上一眼能看到
 
-验证一条通道是否真的活了：
+验证一条通道是否真的活了（把端口换成你的）：
 
 ```bash
-curl -sS -x http://127.0.0.1:7890 -o /dev/null -w "%{http_code}\n" https://中转站 C/v1/models
+curl -sS -x http://127.0.0.1:<代理端口> -o /dev/null -w "%{http_code}\n" https://relay-a.example/v1/models
 ```
 
 
