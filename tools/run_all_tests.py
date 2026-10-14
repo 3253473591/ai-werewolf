@@ -27,6 +27,7 @@ SUITES = [
     ("多通道", "selftest_endpoints.py", "落盘 / 重启读回 / key 掩码 / 轮转分配"),
     ("局后感言", "selftest_reflect.py", "身份来源 / 不泄漏模型名 / 不污染对局记录 / 续跑"),
     ("断连噪声", "selftest_sse_abort.py", "客户端半路断开不打 traceback，但真错误照打"),
+    ("表情派生", "selftest_emotion.py", "只读 events / 不改记录 / 可复现 / 分句无损（供 galgame 消费）"),
 ]
 
 # 前端用 Node + 假 DOM 跑，浏览器打不开时的替代验证

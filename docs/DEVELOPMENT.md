@@ -378,7 +378,7 @@ static/
     ├── winfx.js     结算动画
     ├── drawer.js    配置抽屉（仍是命令式，见下）
     └── main.js      接线 + 挂载 + 启动
-tools/             中转站探针、九套自测（玩法规则 selftest_gameplay.py、
+tools/             中转站探针、12 套自测（玩法规则 selftest_gameplay.py、
                    局后感言 selftest_reflect.py）+ 前端 jsdom 一套
                    run_all_tests.py 一把跑完；
                    受限环境不允许建管道时会自动退回直连输出（退出码仍然准）

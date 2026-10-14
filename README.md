@@ -123,6 +123,32 @@ python run_text.py --seats 9
 
 ---
 
+## 测试
+
+12 个自测套件、**586 个断言**、3333 行，`python tools/run_all_tests.py` 一把跑完：
+
+| 套件 | 断言 | 覆盖 |
+|---|---|---|
+| `selftest_gameplay.py` | 212 | 投票理由 / 狼队表决 / 猎人开枪 / PK / 自曝 / 白痴 / 警长 / 落盘 |
+| `selftest_frontend.js` | 95 | 真实 DOM + 真实 petite-vue：SSE 渲染、追加消息不重建节点、结算动画 |
+| `selftest_fallback.py` | 72 | 换人时机 / `substituted` 标记 / 时限 / **跨通道** |
+| `selftest_transport.py` | 48 | 推理字段名兼容、中文动作词、截断抢救 |
+| `selftest_reflect.py` | 41 | 局后感言：身份来源、不泄漏模型名、不污染对局记录 |
+| `selftest_endpoints.py` | 40 | 落盘 / 重启读回 / key 掩码 / 轮转分配 |
+| `selftest_invariants.py` | 29 | 审计能抓泄漏；且真故障只进上帝账本、不进公开公告 |
+| `selftest_emotion.py` | 21 | 表情派生层边界：只读 events / 不改记录 / 可复现 / 分句无损 |
+| `selftest_gate.py` / `selftest_draw.py` / `selftest_rules.py` / `selftest_sse_abort.py` | 28 | 闸门真阻塞、抽卡卡方检验、胜负规则、断连噪声 |
+
+两条设计原则：
+
+- **一个从不失败的检查等于没有检查。** `selftest_invariants.py` 会**故意制造泄漏**来证明守卫不是空检查。
+- **只 print 不算检查。** 审计发现过一条真实缺陷——某个座位的代打链整条和主模型同通道，
+  而当时那条审计只 `print` 不 `check`，所以从来没报出来。现在每个座位的判定都是断言。
+
+详见 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md#完整命令与排查工具)。
+
+---
+
 ### 这一局花了多少
 
 `summary.json` 现在有**输出侧**口径：`completion_tokens_total` /
@@ -188,7 +214,7 @@ static/
     ├── winfx.js     结算动画
     ├── drawer.js    配置抽屉（仍是命令式，见下）
     └── main.js      接线 + 挂载 + 启动
-tools/             中转站探针、九套自测（玩法规则 selftest_gameplay.py、
+tools/             中转站探针、12 套自测（玩法规则 selftest_gameplay.py、
                    局后感言 selftest_reflect.py）+ 前端 jsdom 一套
                    run_all_tests.py 一把跑完；
                    受限环境不允许建管道时会自动退回直连输出（退出码仍然准）
