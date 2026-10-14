@@ -552,7 +552,7 @@ M3 想加气泡入场 / 日夜转场时，动画会被每来一条新消息重�
 
 > 🔒 **整个 `config/` 都不提交**：`endpoints.json` 里存的是**明文 key**，
 > `seats.json` 里有通道地址与本机代理。首次运行先 `cp -r config.example config`，
-> 详见 [`config.example/`](config.example/)。页面回显时只给掩码（`EwI3***O5R`）。
+> 详见 [`config.example/`](../config.example/)。页面回显时只给掩码（`EwI3***O5R`）。
 
 **模型不再是固定九个**：多通道下每个通道能提供的模型以实际拉取为准，
 所以座位上的模型可能和你预设的不一样。页面上的下拉就是实际在架的清单。

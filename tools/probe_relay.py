@@ -3,7 +3,7 @@
 """
 中转站探针 — AI 狼人杀项目的前置可行性验证
 
-设计文档见 ../DESIGN.md 第 9 节「开放问题」。本脚本回答其中 4 个：
+设计文档见 docs/docs/DESIGN.md 第 9 节「开放问题」。本脚本回答其中 4 个：
 
   T1  基本 OpenAI 兼容性          —— 中转站能不能用
   T2  ★ 前缀缓存是否生效          —— 决定"全量原文 + 长上下文"的成本与延迟能否压住
@@ -677,12 +677,12 @@ def main() -> int:
         print("  ✗ 没有任何模型可用，先检查 base_url / api_key / 中转站状态")
     elif cache_ok == 0:
         print("  ⚠ 未观察到缓存生效。两种可能：")
-        print("      a) 网关确实不做前缀缓存 —— 那么 DESIGN.md 第 3 节的收益不成立，")
+        print("      a) 网关确实不做前缀缓存 —— 那么 docs/DESIGN.md 第 3 节的收益不成立，")
         print("         需要重新评估：缩短大桌、减少轮次、或按座位裁剪视图")
         print("      b) 网关做了缓存但不上报 —— 看 T2 的延迟差，Δ 明显（比如 >30%）")
         print("         说明实际有缓存，可以按有缓存设计")
     else:
-        print("  ✓ 缓存生效，DESIGN.md 第 3 节的「共享前缀 + 尾部差异」结构可以按原计划实现")
+        print("  ✓ 缓存生效，docs/DESIGN.md 第 3 节的「共享前缀 + 尾部差异」结构可以按原计划实现")
 
     with open(args.out, "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)

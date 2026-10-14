@@ -1,4 +1,4 @@
-"""Prompt 组装 —— 本设计的核心，对应 DESIGN.md 第 3 节。
+"""Prompt 组装 —— 本设计的核心，对应 docs/DESIGN.md 第 3 节。
 
 三条反直觉但必须遵守的决定：
 

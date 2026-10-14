@@ -23,7 +23,7 @@
       "api_key": "sk-YOUR-KEY-HERE",
       "concurrency": 5,
       "enabled": true,
-      "note": "OpenAI 兼容中转。实测：前缀缓存分模型（见 PROBE_FINDINGS.md 的方法学）",
+      "note": "OpenAI 兼容中转。实测：前缀缓存分模型（见 docs/PROBE_FINDINGS.md 的方法学）",
       "_models": [
         "gpt-5",
         "claude-sonnet-5",

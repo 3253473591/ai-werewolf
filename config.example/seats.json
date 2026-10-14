@@ -1,5 +1,5 @@
 {
-  "_comment": "示例配置。复制为 config/seats.json。实测数据见 PROBE_FINDINGS.md，设计见 DESIGN.md §6。",
+  "_comment": "示例配置。复制为 config/seats.json。实测数据见 docs/PROBE_FINDINGS.md，设计见 docs/docs/DESIGN.md §6。",
   "_updated": "2026-10-06",
   "_fallback_note": "代打已开启。主模型失败后按 fallback 列表依次尝试；切换会在行动日志里留一条上帝视角记录，summary 里有 calls_substituted 计数。策略旋钮在 game 段：max_attempts_per_model / switch_model_on_timeout / call_deadline_s。",
   "fallback_enabled": true,

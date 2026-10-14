@@ -5,10 +5,15 @@
 「所有座位逐字节相同的共享前缀」+「只属于它的尾部块」组成，身份、私密信息、
 历史立场全部只进尾部块。
 
-- 设计文档：[`DESIGN.md`](DESIGN.md)
-- 通道实测报告：[`PROBE_FINDINGS.md`](PROBE_FINDINGS.md)
+- 设计文档：[`DESIGN.md`](docs/DESIGN.md)
+- 通道实测报告：[`PROBE_FINDINGS.md`](docs/PROBE_FINDINGS.md)
 - 配置模板：[`config.example/`](config.example/)
 - **开发笔记**：[`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)（玩法规则细节、完整命令、调试工具、踩过的坑）
+
+> **本项目基于 [AgentWereWolf](https://github.com/yingyingxia666/AgentWereWolf)（MIT）改造**：
+> 沿用其规则机、阶段框架与信息可见性模型，**替换掉它的记忆层**——改走
+> append-only 事件流 + 全量原文渲染，靠长上下文与前缀缓存撑住成本和延迟。
+> 详细来源与改动范围见 [`NOTICE.md`](NOTICE.md)，设计与迁移映射见 [`docs/DESIGN.md`](docs/DESIGN.md) 第 0、8 节。
 
 只用 Python 标准库，不装依赖就能跑一局（含离线模式）。
 
@@ -24,7 +29,7 @@
 | M0 探针 | 缓存 / 并发 / JSON mode / 模型可用性 | ✅ 完成 |
 | M1 内核 | 事件流 + 共享前缀渲染 + 双通道解析 + 文本版跑通 | ✅ 完成 |
 | M2 九座 | 真实九座对局 + fallback 代打验证 + 日志监控 | ✅ **完成**（2026-10-05） |
-| M3 前端 | 卡牌立绘、发言连线、上帝视角 | ⏳ **方案已定，实现未开始**：[`M3_FRONTEND.md`](M3_FRONTEND.md) |
+| M3 前端 | 卡牌立绘、发言连线、上帝视角 | ⏳ **方案已定，实现未开始**：[`M3_FRONTEND.md`](docs/M3_FRONTEND.md) |
 | M4 调优 | prompt 迭代 | ⏳ |
 
 > M3 现在只有技术方案与视觉稿，代码还没写。仓库里能跑的是 **M0–M2 的内核 + 文本版 + 浏览器版（petite-vue 过渡态）**。
@@ -205,4 +210,6 @@ package.json       只有 devDependency: jsdom（给前端自测用）
 
 ## 许可
 
-MIT，见 [`LICENSE`](LICENSE)。
+本项目 MIT，见 [`LICENSE`](LICENSE)。
+
+基于 [AgentWereWolf](https://github.com/yingyingxia666/AgentWereWolf)（MIT）改造，来源与复用范围见 [`NOTICE.md`](NOTICE.md)。

@@ -1,6 +1,6 @@
-"""中转站客户端。对应 DESIGN.md 第 6.2 / 6.3 节。
+"""中转站客户端。对应 docs/DESIGN.md 第 6.2 / 6.3 节。
 
-相对原项目 lib/llm.py 补齐的六件事（全部来自实测，见 ../PROBE_FINDINGS.md）：
+相对原项目 lib/llm.py 补齐的六件事（全部来自实测，见 docs/docs/PROBE_FINDINGS.md）：
 
   1. **curl 回退** —— 某些沙箱里 Python 的 SSL 栈握手直接失败，curl 却能通
   2. **读 reasoning_content** —— 推理型模型会把额度花在推理上，content 返回空串

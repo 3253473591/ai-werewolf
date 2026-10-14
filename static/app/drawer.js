@@ -2,7 +2,7 @@
  *
  * 这里的东西只在用户操作时变（选人数、改端点、换模型），不属于
  * "每条 SSE 都在重建"的热路径，所以先原样搬过来；等它在 M3 里继续长大
- * 再逐个改写成 petite-vue（见 DESIGN.md 第 12 节）。
+ * 再逐个改写成 petite-vue（见 docs/DESIGN.md 第 12 节）。
  */
 import { api, toast } from './api.js';
 import { store, hooks } from './store.js';

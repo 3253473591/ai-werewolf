@@ -1,6 +1,6 @@
 """可见性判定 —— 信息隔离的唯一入口。
 
-对应 DESIGN.md 第 2 节。整个系统的生命线是：**村民座位的 prompt 里
+对应 docs/DESIGN.md 第 2 节。整个系统的生命线是：**村民座位的 prompt 里
 永远不能出现 WOLF 频道内容、真实身份或狼队友名单。**
 """
 from __future__ import annotations
