@@ -15,6 +15,11 @@
 > append-only 事件流 + 全量原文渲染，靠长上下文与前缀缓存撑住成本和延迟。
 > 详细来源与改动范围见 [`NOTICE.md`](NOTICE.md)，设计与迁移映射见 [`docs/DESIGN.md`](docs/DESIGN.md) 第 0、8 节。
 
+![离线模式跑完一局 9 座对局](docs/images/demo-stub-run.gif)
+
+*`python run_text.py --stub --seats 9` —— 用本地假模型跑完整流程，不消耗任何额度。*
+*41 次调用 0 失败，信息隔离审计 9 座全过，末尾是上帝视角事件流与胜负结算。*
+
 只用 Python 标准库，不装依赖就能跑一局（含离线模式）。
 
 > 改动前请先读 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) 的「四条必须守住的规则」——
