@@ -207,7 +207,6 @@ tools/             中转站探针、12 套自测（玩法规则 selftest_gamepl
                    受限环境不允许建管道时会自动退回直连输出（退出码仍然准）
                    + 四个排查起子：report_run / inspect_calls / inspect_failures / dump_call
                    + replay_call.py（用真实 messages 重放一次调用，验证换参数的效果）
-                   + make_demo_gif.py（把终端输出渲染成 GIF，首屏那个演示来自它）
 package.json       只有 devDependency: jsdom（给前端自测用）
 ```
 

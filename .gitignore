@@ -12,6 +12,10 @@ __pycache__/
 # 探针报告里可能带 base_url / 用量
 tools/probe_report.json
 
+# 本地 GIF 渲染脚本：脱敏正则里硬编码了真实中转站名，不进公开仓库。
+# 首屏的 demo-stub-run-12seat.gif 由它生成，脚本本身留在本地。
+tools/make_demo_gif.py
+
 # 前端开发依赖（jsdom 只给 tools/selftest_frontend.js 用）
 # 运行时零依赖：petite-vue 已经 vendored 到 static/vendor/
 node_modules/
