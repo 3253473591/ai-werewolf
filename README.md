@@ -1,11 +1,13 @@
 # AI 狼人杀
 
-9 个不同 LLM 在同一个房间里打狼人杀。内核走**事件流 + 共享前缀**路线，
+12 个不同 LLM 在同一个房间里打狼人杀（当前 12 座阵容；里程碑记录里保留着 9 座时期的历史基准）。
+内核走**事件流 + 共享前缀**路线，
 不是"把聊天记录塞进 prompt"的老做法——每个座位在任意时刻的 prompt 都由
 「所有座位逐字节相同的共享前缀」+「只属于它的尾部块」组成，身份、私密信息、
 历史立场全部只进尾部块。
 
 - 设计文档：[`DESIGN.md`](docs/DESIGN.md)
+- **实测结果**：[`RESULTS.md`](RESULTS.md)（成本 / 调用 / 成功率 / 缓存 / 历史基准 —— 所有数字都在这里）
 - 通道实测报告：[`PROBE_FINDINGS.md`](docs/PROBE_FINDINGS.md)
 - 配置模板：[`config.example/`](config.example/)
 - **开发笔记**：[`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)（玩法规则细节、完整命令、调试工具、踩过的坑）
@@ -15,10 +17,10 @@
 > append-only 事件流 + 全量原文渲染，靠长上下文与前缀缓存撑住成本和延迟。
 > 详细来源与改动范围见 [`NOTICE.md`](NOTICE.md)，设计与迁移映射见 [`docs/DESIGN.md`](docs/DESIGN.md) 第 0、8 节。
 
-![离线模式跑完一局 9 座对局](docs/images/demo-stub-run.gif)
+![离线模式跑完一局 12 座对局](docs/images/demo-stub-run-12seat.gif)
 
-*`python run_text.py --stub --seats 9` —— 用本地假模型跑完整流程，不消耗任何额度。*
-*41 次调用 0 失败，信息隔离审计 9 座全过，末尾是上帝视角事件流与胜负结算。*
+*`python run_text.py --stub --seats 12` —— 用本地假模型跑完整流程，不消耗任何额度。*
+*109 次调用 0 失败，信息隔离审计 12 座全过，终局共享前缀 153 条消息逐字节一致，末尾是上帝视角事件流与胜负结算。*
 
 只用 Python 标准库，不装依赖就能跑一局（含离线模式）。
 
@@ -37,32 +39,23 @@
 | M3 前端 | 卡牌立绘、发言连线、上帝视角 | 已拆分为独立项目 |
 | M4 调优 | bug 修复、prompt 迭代、代打链校正、模型替换等 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | 持续进行 |
 
-### M2 完成情况（2026-10-05）
+> **阵容已经在 M4 期间扩到 12 座**：10 座（2026-10-06）→ **12 座（2026-10-11 起有完整局落地）**。
+> 12 人板 = 4 狼 + 预言家 / 女巫 / 猎人 / 白痴 + 4 民，另带**警长竞选**。
+>
+> 当前阵容的实测口径：**5 局跑完的 12 座真实对局，602 次调用、成功率 99.0%、
+> 全局缓存命中 41.3%、思维链占输出 74.7%**。逐项数字、单局明细、九座历史基准
+> 与"读这些数之前要知道的三个口径坑"，全部在 **[`RESULTS.md`](RESULTS.md)**。
 
-三条验收标准全部达成：
+### 这一局大概要跑多久
 
-| 标准 | 结果 |
-|---|---|
-| 9 座真实对局跑完整局 | ✅ 好人阵营胜 · 2 天 · **46 次调用** · 墙钟约 41 分钟 |
-| 信息隔离审计零泄漏 | ✅ 通过（扫描的是每次实际发出的完整 messages） |
-| 每座的缓存命中率进 summary.json | ✅ 两条路径（CLI / 浏览器）现在都写，字段一致 |
+| 座位数 | 天数 | 调用 | 墙钟 |
+|---|---|---|---|
+| 12 座 | 5 天 | 119 | ~69 分钟 |
+| 12 座 | 3 天 | 104 | ~39 分钟 |
+| 9 座（M2 基准） | 2 天 | 46 | ~41 分钟 |
 
-那一局的实测数据（`runs/20261005_131915_9seat_web`）：
-
-| 指标 | 数值 |
-|---|---|
-| 单次最大 prompt | **12,078 tokens**（第 2 天） |
-| 前缀缓存命中 | 54,113 / 210,629 = **25.7%**（DeepSeek 57.7%、Kimi 55.9%、Qwen 46.8%、GPT 38.8%；Gemini/Claude 0%） |
-| 延迟瓶颈 | **Grok 一座占全场等待的 42%**（累计 777s，中位 79.8s，另有一次 240s 超时） |
-| 玩法路径 | 投票理由 15 投 14 条带理由 · 狼队多数表决 3 次 · 未发言 1 次 · 无 PK、无自曝 |
-
-**代打（fallback）也在 M2 期间做完并实测通过** —— 见下面「代打」一节，
-证据留在 `runs/20261005_200811_3seat`（grok 失败 → 豆包接管）和
-`runs/20261005_201311_4seat`（整条端点不可达 → 9 次调用 0 失败，4 次代打）。
-
-> M2 之后顺手修掉的四个真 bug（都会让**整局**而不是一次调用失败）：
-> `_URLLIB_DEAD` 全局拉黑、传输层异常崩局、CLI 忽略多通道配置、
-> `stats` 漏 `attempts` 导致 `calls_retried` 恒为 0。
+> 墙钟基本由**最慢的那个座位**决定（串行发言），不是由座位数或 token 数决定。
+> 换模型之前先用 `tools/probe_reasoning.py` 量一次，别拿一局去试。
 
 ---
 
@@ -72,7 +65,7 @@
 
 ```bash
 # 用本地假模型把引擎 / 渲染 / 审计链路完整跑通
-python run_text.py --stub --seats 9
+python run_text.py --stub --seats 12
 
 # 全部自测（胜负判定 / 玩法规则 / 抽卡 / 闸门 / 信息隔离 / 响应解析 / 多通道 / 前端）
 python tools/run_all_tests.py
@@ -114,7 +107,7 @@ python server.py                # 打开 http://127.0.0.1:8099
 
 ```bash
 python run_text.py --seats 5 --max-days 4
-python run_text.py --seats 9
+python run_text.py --seats 12
 ```
 
 > 完整命令（单步调试、dump prompt、通道探针、watch/report/inspect/replay 等排查工具）
@@ -125,7 +118,10 @@ python run_text.py --seats 9
 
 ## 测试
 
-12 个自测套件、**586 个断言**、3333 行，`python tools/run_all_tests.py` 一把跑完：
+12 个自测套件、**586 个断言**、4093 行，`python tools/run_all_tests.py` 一把跑完：
+
+> 断言数是各套件 `check()` / `assert()` 的实际条数之和（212+95+72+48+41+40+29+21+28）；
+> 行数是 `tools/selftest_*.py` 3561 行 + `selftest_frontend.js` 532 行。
 
 | 套件 | 断言 | 覆盖 |
 |---|---|---|
@@ -149,38 +145,29 @@ python run_text.py --seats 9
 
 ---
 
-### 这一局花了多少
+## 每局产出什么
 
-`summary.json` 现在有**输出侧**口径：`completion_tokens_total` /
-`reasoning_tokens_total` / `wasted_completion_tokens_total`；
-`python tools/report_run.py runs/<局>` 会多打一张逐座成本表。
-
-两局实测（10 座局与 M2 基准局）：
-
-| | 输出 tokens | 其中思维链 | 思维链占比 |
-|---|---|---|---|
-| `20261006_011857_10seat_web` | 149,728 | 121,096 | **81%** |
-| `20261005_131915_9seat_web` | 101,442 | 73,008 | **72%** |
-
-**钱主要花在"想"上。** 关掉思维链的座位几乎不花钱（豆包 4 次调用 930 tokens、
-MiniMax 0 思维链），而 GLM 一座就占全场输出的 34%（8 次调用 51,326 tokens，98% 是思维链）。
-
-`wasted_completion_tokens` 是**被翻倍重试/超时而丢弃的那些尝试**——它们同样计费，
-以前只记最终那次的 `usage`，这笔钱在账单上是隐形的。
-2026-10-06 起每次尝试都记进 `attempts_detail`（含 `max_tokens` / 消耗 / 丢弃原因），
-`tools/inspect_calls.py --full` 能逐条展开看。
-
-> 老对局（2026-10-06 之前）的 `wasted` 显示 `?`——**不是没烧，是当时没记账**。
-
-每局输出到 `runs/<时间戳>_<座位数>/`：
+每局写成 `runs/<时间戳>_<座位数>_<web|stub>/` 一个目录（12 座 = 12 个 `seat_*.jsonl`
++ `events.jsonl` + `summary.json`）：
 
 ```
-runs/20261004_182248_5seat/
+runs/20261011_181251_12seat_web/
 ├── events.jsonl      # 权威事件流，回放唯一数据源
 ├── seat_1.jsonl      # 每座：完整 messages / 原始响应 / usage / 缓存命中 / 截断标记
-├── ... seat_9.jsonl
+├── ... seat_12.jsonl
 └── summary.json      # 结果、成本统计（含推理/白烧 token）、隔离审计、输出质量
 ```
+
+`seat_*.jsonl` 存的是**每次实际发出去的完整 messages** —— 这是排查
+"某个 AI 为什么突然改口"的唯一手段，也是信息隔离审计的比对对象。
+
+- 成本怎么算、钱花在哪、白烧 token 是什么：**[`RESULTS.md`](RESULTS.md)** §2
+- 逐条展开某次调用：`python tools/inspect_calls.py runs/<局> --full`
+- 逐座延迟 / 缓存命中 / 截断报告：`python tools/report_run.py runs/<局>`
+
+> ⚠️ `summary.json` 里的 `shared_prefix_ok` / `no_model_names_ok` **只有 CLI 对局会写**，
+> 浏览器跑出来的局是 `null`——那两个渲染不变量守卫只在 `run_text.py` 里跑，`server.py` 不跑也不记。
+> 信息隔离审计（`audit.ok`）两条路径都写。口径细节见 [`RESULTS.md`](RESULTS.md) §5。
 
 ---
 
@@ -196,7 +183,7 @@ aiwolf/
 ├── gate.py        调试闸门：暂停 / 单步 / 强制结束
 ├── engine.py      游戏循环与规则机（胜负：parity / side）
 └── audit.py       信息隔离审计（M1 验收标准）
-config/seats.json  九座阵容与逐模型怪癖
+config/seats.json  十二座阵容与逐模型怪癖
 run_text.py        文本版 runner
 server.py          Web 服务（标准库 + SSE，含静态资源路由）
 static/
@@ -212,7 +199,7 @@ static/
     ├── api.js       后端接口 + 轻提示
     ├── sse.js       SSE 归约（handleMessage 可直接被测试调用）
     ├── winfx.js     结算动画
-    ├── drawer.js    配置抽屉（仍是命令式，见下）
+    ├── drawer.js    配置抽屉（仍是命令式，见 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) 的「前端架构」）
     └── main.js      接线 + 挂载 + 启动
 tools/             中转站探针、12 套自测（玩法规则 selftest_gameplay.py、
                    局后感言 selftest_reflect.py）+ 前端 jsdom 一套
@@ -220,8 +207,10 @@ tools/             中转站探针、12 套自测（玩法规则 selftest_gamepl
                    受限环境不允许建管道时会自动退回直连输出（退出码仍然准）
                    + 四个排查起子：report_run / inspect_calls / inspect_failures / dump_call
                    + replay_call.py（用真实 messages 重放一次调用，验证换参数的效果）
+                   + make_demo_gif.py（把终端输出渲染成 GIF，首屏那个演示来自它）
 package.json       只有 devDependency: jsdom（给前端自测用）
 ```
+
 ---
 
 ## 开发笔记

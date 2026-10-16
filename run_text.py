@@ -11,8 +11,8 @@
     set RELAY_API_KEY=...
     python run_text.py --seats 5
 
-    # 完整九座
-    python run_text.py --seats 9
+    # 完整十二座
+    python run_text.py --seats 12
 
 M1 验收标准：审计输出里 violations 必须为空 ——
 村民座位的 prompt 里从未出现任何 WOLF 频道内容或别人的私密信息。

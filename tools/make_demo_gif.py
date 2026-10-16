@@ -172,10 +172,19 @@ def main() -> int:
     ap.add_argument("--hold-frames", type=int, default=40, help="末尾定格帧数")
     ap.add_argument("--duration", type=int, default=90, help="每帧毫秒")
     ap.add_argument("--max-colors", type=int, default=64, help="调色板颜色数，越小文件越小")
+    ap.add_argument("--seats", type=int, default=0,
+                    help="标题栏里显示的座位数；0 = 从日志自动识别（默认）")
     args = ap.parse_args()
 
     raw = read_log(args.logfile)
     raw = map_chars(scrub(raw))
+
+    # 标题栏的座位数**从日志里读**，不要写死 —— 写死之后 9 座扩到 12 座，
+    # 首屏演示 GIF 上还印着 `--seats 9`，和正文自相矛盾。
+    seats = args.seats
+    if not seats:
+        m = re.search(r"·\s*(\d+)\s*座", raw)
+        seats = int(m.group(1)) if m else 12
 
     # 折行：按显示列宽（中文算 2 列）
     lines = wrap_cells(raw, args.cols)
@@ -201,7 +210,8 @@ def main() -> int:
         d = ImageDraw.Draw(img)
         # 终端标题栏
         d.rectangle([0, 0, img_w, pad + 6], fill=(22, 27, 34))
-        d.text((pad, 3), "run_text.py --stub --seats 9    （离线模式，不消耗额度）", font=font, fill=DIM)
+        d.text((pad, 3), f"run_text.py --stub --seats {seats}    （离线模式，不消耗额度）",
+               font=font, fill=DIM)
         window = lines[off : off + visible]
         y = pad + 16
         for ln in window:

@@ -41,12 +41,13 @@
 | 各模型支持 JSON 输出 | 动作解析可靠性 | ✅ 9/9 支持 `response_format: json_object` |
 | 各模型可用上下文 ≥ 256K | 全量原文可行 | ✅ **成立且余量很大**：实测 12 座 6 天最大 prompt 约 **3 万 tokens**，占 256K 的 11%（拟合见 `docs/DEVELOPMENT.md` 的「上下文预算」） |
 
-**缓存不是优化项，是可行性前提。** 一局 9 座 × 多轮，若每轮重发 100K token 全部按未命中计费，
+**缓存不是优化项，是可行性前提。** 一局 12 座 × 多轮，若每轮重发 100K token 全部按未命中计费，
 成本不可接受；更致命的是 **prefill 延迟**（首 token 时间 ∝ 未命中 token 数），
-9 座串行发言会让一局跑成几十分钟。第 3 节的全部设计都是为缓存服务的——**实测已验证它成立**。
+12 座串行发言会让一局跑成几十分钟。第 3 节的全部设计都是为缓存服务的——**实测已验证它成立**
+（5 局完整 12 座对局的全局缓存命中率 **41.3%**，实测口径见 §6.1）。
 
-⚠️ 但缓存**不是全模型覆盖**：`gemini-3.8-flash` 确认不吃缓存，`minimax-m3` 只命中
-后端固定模板，`claude-*` 完全不上报。这三个座位在后期会成为延迟瓶颈。
+⚠️ 但缓存**不是全模型覆盖**：`gem-3.8-flash` 确认不吃缓存，`MiniMax-M3` 只命中
+后端固定模板，`claude-*` 完全不上报。这些座位在后期会成为延迟瓶颈。
 
 ---
 
@@ -150,7 +151,7 @@ def visible(ev: Event, seat: Seat) -> bool:
                               ^^^^^^^^^^^^^^^^ 字节级完全相同 ← 缓存命中的就是这一段
 ```
 
-这样 9 个座位共享同一条巨大的前缀链，缓存收益最大化。
+这样 12 个座位共享同一条巨大的前缀链，缓存收益最大化。
 
 ---
 
@@ -160,10 +161,10 @@ def visible(ev: Event, seat: Seat) -> bool:
 
 ```python
 messages = [
-    # ① 公共规则段：9 个座位字节级完全相同
+    # ① 公共规则段：12 个座位字节级完全相同
     {"role": "system", "content": COMMON_RULES + OUTPUT_PROTOCOL},
 
-    # ② PUBLIC 全量，逐轮展开为 turn：9 个座位字节级完全相同
+    # ② PUBLIC 全量，逐轮展开为 turn：12 个座位字节级完全相同
     {"role": "user", "content": "[第1天 · 发言] 1号 Gemini：我首置位起跳……」"},
     {"role": "user", "content": "[第1天 · 发言] 2号 Z.AI：……」"},
     ...
@@ -179,7 +180,7 @@ messages = [
 #### 决定一：身份卡放在**尾部**，不能放开头
 
 直觉是把"你是 1 号、身份是预言家"放 system 首条。**在这个架构下这是错的**——
-一旦首条不同，9 个座位从 token 0 就分叉，PUBLIC 段完全无法共享缓存。
+一旦首条不同，12 个座位从 token 0 就分叉，PUBLIC 段完全无法共享缓存。
 
 把身份卡放尾部，反而利用了 recency 优势（尾部是注意力最强的位置），模型不会"忘记自己是狼"。
 尾部块末尾会再次强调身份与当前阶段，重复无成本。
@@ -310,7 +311,7 @@ PUBLIC 前缀对所有座位相同，所以：
 1. **先串行发第一个座位**的请求（此时代价是完整的未命中 prefill）；
 2. **其余 8 个座位并发**发出（此时 PUBLIC 段全部命中缓存，只有尾部块需要 prefill）。
 
-若一上来就 9 座齐发，会出现 9 个请求同时做同一份 100K prefill，浪费且容易被限流。
+若一上来就 12 座齐发，会出现 12 个请求同时做同一份 100K prefill，浪费且容易被限流。
 
 ---
 
@@ -498,7 +499,7 @@ PUBLIC 前缀对所有座位相同，所以：
 
 ---
 
-## 6. 九座位、模型配置、fallback、并发
+## 6. 十二座位、模型配置、fallback、并发
 
 ### 6.1 配置（已按 `relay-a.example` 实测校正）
 
@@ -509,25 +510,36 @@ PUBLIC 前缀对所有座位相同，所以：
   "relay": { "base_url": "https://relay-a.example/v1", "api_key_env": "RELAY_API_KEY" },
   "concurrency": { "global": 8, "per_seat_overrides": {} },
   "seats": [
-    { "no": 1, "label": "Gemini",   "model": "gemini-3.8-flash",    "cache": "none",      "T1": "1.9s" },
-    { "no": 2, "label": "GPT",      "model": "gpt-5.6-sol",         "cache": "auto",      "T1": "7.5s" },
-    { "no": 3, "label": "Claude",   "model": "claude-sonnet-4-6",   "cache": "anthropic", "T1": "2.0s" },
-    { "no": 4, "label": "Doubao",   "model": "ep-2026…gcv24",       "cache": "auto",      "T1": "17.2s" },
-    { "no": 5, "label": "Qwen",     "model": "qwen3.7-max",         "cache": "auto",      "T1": "4.3s" },
-    { "no": 6, "label": "DeepSeek", "model": "deepseek-v4.1-flash", "cache": "auto",      "T1": "2.2s" },
-    { "no": 7, "label": "GLM",      "model": "glm-5.3-flash",       "cache": "auto",      "T1": "2.0s" },
-    { "no": 8, "label": "MiniMax",  "model": "minimax-m3",          "cache": "none",      "T1": "1.8s" },
-    { "no": 9, "label": "Kimi",     "model": "kimi-k2.6",           "cache": "auto",      "T1": "2.5s" }
+    { "no": 1,  "label": "DeepSeek", "model": "deepseek-flash",               "endpoint": "ep1",  "cache": "none" },
+    { "no": 2,  "label": "GPT",      "model": "gpt-6.1-sol",                  "endpoint": "ep12", "cache": "auto" },
+    { "no": 3,  "label": "Grok",     "model": "gk-4.6",                       "endpoint": "ep5",  "cache": "anthropic" },
+    { "no": 4,  "label": "豆包",      "model": "doubao-seed-2-1-lite-260915",  "endpoint": "ep4",  "cache": "auto" },
+    { "no": 5,  "label": "千问",      "model": "qwen3.8-flash",                "endpoint": "ep8",  "cache": "auto" },
+    { "no": 6,  "label": "Gemini",   "model": "gem-3.8-flash",                "endpoint": "ep5",  "cache": "auto" },
+    { "no": 7,  "label": "GLM",      "model": "glm-5.2",                      "endpoint": "ep2",  "cache": "auto" },
+    { "no": 8,  "label": "MiniMax",  "model": "MiniMax-M3",                   "endpoint": "ep10", "cache": "none" },
+    { "no": 9,  "label": "Kimi",     "model": "kimi-k2.6",                    "endpoint": "ep7",  "cache": "auto" },
+    { "no": 10, "label": "Claude",   "model": "claude-fable-5-1",             "endpoint": "ep11", "cache": "auto" },
+    { "no": 11, "label": "跃阶星辰",  "model": "step-5-preview",               "endpoint": "ep9",  "cache": "auto" },
+    { "no": 12, "label": "小米",      "model": "mimo-v2.6-flash",              "endpoint": "ep6",  "cache": "auto" }
   ]
 }
 ```
+
+> **12 人板 = 4 狼 + 预言家 / 女巫 / 猎人 / 白痴 + 4 民**（`ROLE_SETS_ALT[12]`），
+> 另带**警长竞选**（`game.sheriff_enabled`）。
+> 角色配置的**唯一事实源**永远是 `aiwolf/seats.py` 的 `ROLE_SETS` / `ROLE_SETS_ALT`，
+> 不在这份 json 里；`config/seats.json` 只管"哪个座位坐哪家模型 + 走哪条通道"。
+> 座位与模型的对应**不是固定的**：可用模型清单是动态拉取的（见 §6.2），
+> 页面上的下拉就是实际在架清单，改完落盘。
 
 > **4 号座 2026-10-05 由 `grok-4-5` 换成豆包**（火山方舟推理接入点 `ep-…`）。
 > 依据是 M2 那局实测：Grok 9 次调用累计 **777s**，占全场串行等待的 **42%**，
 > 中位 79.8s、最慢 162.3s，还白烧过一次 240s 超时。豆包实测白天 17.2s、
 > 狼队 71.0s；**`extra_body={"thinking":{"type":"disabled"}}` 关掉思维链后狼队降到 2.7s**。
 > 方舟**不把思维链算进 `max_tokens`**（`completion_tokens` 4262 > `max_tokens` 3072
-> 照样不截断），所以没有 GLM 那条"思考烧光额度"的坑。旧配置留在该座 `fallback` 里。
+> 照样不截断），所以没有 GLM 那条"思考烧光额度"的坑。旧的 grok 配置保留在 fallback 里。
+> （后来 Grok 换成 `gk-4.6` 并挪到 3 号座，这段结论仍然成立。）
 >
 > ⚠️ 两条相关的坑：① 方舟 `/models` 目录里**没有** `ep-*` 接入点，开局体检会误判成
 > "该通道不提供这个模型"并把整局拦下来 —— `endpoints.is_deployment_id()` 专门豁免它；
@@ -535,16 +547,38 @@ PUBLIC 前缀对所有座位相同，所以：
 > 但 M2 真实对局里它一次投票烧掉 **16377/16384** 的思维链额度、3 次翻倍重试、175.9s，
 > 最后还是截断丢了一票。换 `glm-5.2` 更稳（实测狼队频道 4.6s / 204 tokens）。
 
-**九座里 5 个缓存确认有效**（GLM-flash 99.4%、Kimi-k2.6 99.8%、Qwen 97.6%、
-DeepSeek 99.7%、GPT-5.6-sol 延迟上体现但上报不全）。
-剩下 4 个：Gemini 确认不吃，MiniMax 只命中后端模板，Claude 完全不上报，Grok 上报不一致。
+**缓存要分两个口径看，别把探针数当对局数。**
 
-**省下来的两个坑：**
+- **探针口径**（单次调用、预热后再发同一份前缀）看着很美：GLM 99.4%、Kimi-k2.6 99.8%、
+  Qwen 97.6%、DeepSeek 99.7%。它测的是**上限**——同一份前缀第二次发过去能不能命中。
+- **对局口径**（`summary.json` 的 `audit.seats[].avg_cache_ratio`，该座位全部调用的平均）
+  低得多，因为**前缀每轮都在长，新追加的那一段永远是冷的**。
 
-- `kimi-k2.6` **没有** `temperature=1` 锁定（`kimi-k3` 才有），所以当前阵容不需要强制覆盖。
-  但机制要留着——`temperature_locked_models` 配置项仍然实现，k3 在 fallback 链里，
-  万一主模型挂了切过去，不锁就 400。
-- `grok` 的模型级并发上限是**真存在**的，座位级压到 4。
+5 局完整 12 座对局的对局口径实测：
+
+| 座位 | 对局内平均命中 | 座位 | 对局内平均命中 |
+|---|---|---|---|
+| DeepSeek | **72.8%** | Grok | 23.3% |
+| 跃阶星辰 | 55.5% | MiniMax | 22.9% |
+| 小米 | 48.9% | Kimi | 17.5% |
+| GLM | 41.0% | Claude | 0.3% |
+| GPT | 37.6% | 豆包 | 0.0% |
+| 千问 | 37.3% | Gemini | 0.0% |
+
+全局口径（5 局合计 `cached_tokens / prompt_tokens`）是 **41.3%**。
+Gemini 的 `cached_tokens` 恒为 0（上游已确认全系不吃前缀缓存），豆包在方舟通道上
+5 局也一次没命中；MiniMax 只命中后端固定模板（恒定 128），Claude 完全不上报，Grok 上报不一致。
+
+**两条实测约束（都踩过，代价是整局）：**
+
+- ★ **整个 `kimi` 家族锁 `temperature=1`**，`temperature_locked_models` 按 `"kimi-"` **前缀**匹配。
+  2026-10-06 用 `tools/probe_temperature.py` 打 ep7（Kimi 官方）实测：`kimi-k2.6` /
+  `kimi-k2.7-code` / `kimi-k3` 传 0.9 **全部 HTTP 400**
+  `invalid temperature: only 1 is allowed for this model`，传 1 才 200。
+  **这一条文档曾经写反过**：早先只在 `kimi-k3` 上登记，本节也写着"k2.6 没有这个约束"，
+  结果是 12 座局 9 号座**整局哑火**（每一步都 400）。写 `"kimi-"` 覆盖全族，将来上 kimi-k4 也不必再改。
+- `grok` 的模型级并发上限是**真存在**的（8 并发触发 429）。当前 `per_seat_overrides` 是空的，
+  撞 429 靠退避重试；要压就把它设成 4。
 
 **为什么不用视频里的 Claude Opus 5.5 / GPT-6 Sol：**
 
@@ -559,6 +593,10 @@ DeepSeek 99.7%、GPT-5.6-sol 延迟上体现但上报不全）。
 | `gpt-6-sol` | 81.3s | ❌ 视频里的选择 |
 
 （完整实测数据见 `PROBE_FINDINGS.md`。）
+
+> 这张表是 **2026-10-04 探针期的选型依据**，型号名保留当时的写法。
+> 现在 10 号座用的是 `claude-fable-5-1`（不是表里的 `claude-sonnet-4-6`），
+> 选型逻辑不变：**要的是能扛住长前缀的中位延迟，不是榜单上的旗舰型号**。
 
 ### 6.2 多通道（多个 base_url + key）
 
@@ -588,7 +626,7 @@ config/endpoints.json              ← 落盘，重启自动读回
 > 退避时间加长只能减少撞墙，不能消除。
 
 **连带影响**：每个通道能提供的模型以实际拉取为准，
-所以座位上的模型不一定还是预设的九个。页面上的下拉就是实际在架的清单，
+所以座位上的模型不一定还是预设的十二个。页面上的下拉就是实际在架的清单，
 改动同样落盘到 `config/seats.json`。
 
 ### 6.3 代打（fallback）—— 已实现（2026-10-05）
@@ -691,7 +729,7 @@ UI 的回放（逐条推进、发言连线、气泡）直接消费事件流，�
 | `game/phases/*` | 保留流程骨架，`get_prompt` 换成新渲染器 |
 | `game_controller.py`（59KB） | 保留流程控制；**删除** memory 更新调用，改为纯事件追加 |
 | `lib/game_logger.py` | 扩展记录 cache / usage / fallback / 脏动作 |
-| `llms_config/` | 改为 relay 单一 base + 9 座 |
+| `llms_config/` | 改为 relay 单一 base + 12 座 |
 | `static/*`（65KB） | **重做**（工作量最大项）—— 骨架已完成，见第 12 节 |
 
 **改造的主要工作量在 `decision.py` + `memory.py` 这 74KB。**
@@ -760,6 +798,11 @@ glm 的延迟差几乎看不出来（3.90s → 3.46s）；前缀到 40000 token 
 | **M2 九座** | 真实九座对局 + fallback 代打验证 + 缓存命中率监控 | 2 天 | ✅ **已完成**（2026-10-05） |
 | **M3 前端** | 卡牌立绘、发言连线、气泡、日夜转场、观众/上帝双视角 | 1–2 周 | **已拆分为独立项目** |
 | **M4 调优** | prompt 迭代让 AI 真的会骗人、会抓逻辑 | 持续 | 进行中（真 bug 修复、prompt 迭代、代打链校正、模型替换） |
+
+> **阵容规模在 M4 期间扩到 12 座**（10 座 2026-10-06 → 12 座配警长/白痴，2026-10-11 起
+> 有完整局落地）。下面的 M1/M2 记录保留**当时的原始样本量**（5 座 / 9 座 / 10 座），
+> 不改写成 12 座——那些数字是历史基准，改了就看不出"什么结论是在多大的桌子上得出的"。
+> 当前的 12 座实测数据见 §6.1 与 [`../RESULTS.md`](../RESULTS.md)。
 
 ### M1 完成情况
 
